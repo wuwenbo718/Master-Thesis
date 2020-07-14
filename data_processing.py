@@ -8,22 +8,29 @@ def scale_data(data,scaler):
     data.iloc[:,3:] = X
     return data
 
-def generate_window_slide_data(data,width = 256,stride = 32):
+def generate_window_slide_data(data,width = 256,stride = 32,scaler=False):
     l = len(data)
     end = (l-width)//stride+1
     X = []
     Y = []
-    sc = StandardScaler()
-    for i in range(end):
-        if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+    if scaler:
+        sc = StandardScaler(with_mean = False)
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                #x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                #X += [x_sc]
+                x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                X += [x_sc]
+                #print(set(data.Label2[i*stride:i*stride+width]))
+            else:
+                continue
+    else:
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                Y += [data.Label2[i*stride]]
                 X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
-            #print(set(data.Label2[i*stride:i*stride+width]))
-        else:
-            #print(set(data.Label2[i*stride:i*stride+width]))
-            continue
+            else:
+                continue
+    
     return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
 
 #def generate_CWT_feature(data,widths=260,wavelet = signal.ricker):

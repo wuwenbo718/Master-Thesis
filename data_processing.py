@@ -1,6 +1,7 @@
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import skew
 import numpy as np
+import pandas as pd
 
 def scale_data(data,scaler):
     X = data.iloc[:,3:]
@@ -110,3 +111,17 @@ def generate_feature(data):
     Acti = compute_Acti(data)
     feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti],axis =1)
     return feature
+
+def pipeline_feature(path):
+    emg_data = pd.read_csv(path)
+    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+                           'LEFT_TS':emg_data.LEFT_TS.mean(),
+                           'LEFT_BF':emg_data.LEFT_BF.mean(),
+                           'LEFT_RF':emg_data.LEFT_RF.mean(),
+                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
+                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
+                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
+                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    x,y = generate_window_slide_data(emg_data)
+    feature = generate_feature(x)
+    return feature,y

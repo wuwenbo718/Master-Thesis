@@ -2,6 +2,7 @@ from sklearn.preprocessing import StandardScaler
 from scipy.stats import skew
 import numpy as np
 import pandas as pd
+from nitime.algorithms.autoregressive import AR_est_YW
 
 def scale_data(data,scaler):
     X = data.iloc[:,3:]
@@ -97,7 +98,16 @@ def compute_Acti(data):
     mean = np.mean(data,axis=1)
     return np.sum((data-mean[:,np.newaxis,:])**2,axis=1)/N
 
-def generate_feature(data):
+def compute_AR(data,p=4):
+    N = len(data)
+    feature = np.zeros((N,8))
+    for i in range(N):
+        for j in range(8):
+            ak,_ = AR_est_YW(data[i,:,j],p)
+            feature[i,j] = ak[0]
+    return feature
+
+def generate_feature(data,threshold=20):
     IEMG = compute_IEMG(data)
     MAV = compute_MAV(data)
     SSI = compute_SSI(data)
@@ -106,10 +116,12 @@ def generate_feature(data):
     WL = compute_WL(data)
     ZC = compute_ZC(data)
     SSC = compute_SSC(data)
-    WAMP = compute_WAMP(data,50)
+    WAMP = compute_WAMP(data,threshold)
     skew = compute_Skewness(data)
     Acti = compute_Acti(data)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti],axis =1)
+    AR = compute_AR(data)
+    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR],axis =1)
+    print(threshold)
     return feature
 
 def pipeline_feature(path):

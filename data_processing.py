@@ -107,24 +107,36 @@ def compute_AR(data,p=4):
             feature[i,j] = ak[0]
     return feature
 
-def generate_feature(data,threshold=20):
+def compute_HIST(data,bins=9,ranges=(-10,10)):
+    N = len(data)
+    feature = np.zeros((N,bins*8))
+    for i in range(N):
+        for j in range(8):
+            hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
+            feature[i,j*bins:(j+1)*bins] = hist
+    return feature
+
+def generate_feature(data,threshold_WAMP=30,threshold_ZC=0,threshold_SSC=0,bins=9,ranges=(-10,10)):
     IEMG = compute_IEMG(data)
     MAV = compute_MAV(data)
     SSI = compute_SSI(data)
     VAR = compute_VAR(data)
     RMS = compute_RMS(data)
     WL = compute_WL(data)
-    ZC = compute_ZC(data)
-    SSC = compute_SSC(data)
-    WAMP = compute_WAMP(data,threshold)
+    ZC = compute_ZC(data,threshold_ZC)
+    SSC = compute_SSC(data,threshold_SSC)
+    WAMP = compute_WAMP(data,threshold_WAMP)
     skew = compute_Skewness(data)
     Acti = compute_Acti(data)
     AR = compute_AR(data)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR],axis =1)
-    print(threshold)
+    HIST = compute_HIST(data,bins=bins,ranges=ranges)
+    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST],axis =1)
+    print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
+          %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
+    print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR')
     return feature
 
-def pipeline_feature(path):
+def pipeline_feature(path,width = 256,stride = 32,scaler=False,threshold_WAMP=30,threshold_ZC=0,threshold_SSC=0,bins=9,ranges=(-10,10)):
     emg_data = pd.read_csv(path)
     emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
                            'LEFT_TS':emg_data.LEFT_TS.mean(),
@@ -134,6 +146,6 @@ def pipeline_feature(path):
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    x,y = generate_window_slide_data(emg_data)
-    feature = generate_feature(x)
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    feature = generate_feature(x,threshold_WAMP=threshold_WAMP,threshold_ZC=threshold_ZC,threshold_SSC=threshold_SSC,bins=bins,ranges=ranges)
     return feature,y

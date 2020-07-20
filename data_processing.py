@@ -133,7 +133,7 @@ def generate_feature(data,threshold_WAMP=30,threshold_ZC=0,threshold_SSC=0,bins=
     feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST],axis =1)
     print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
           %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
-    print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR')
+    print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST')
     return feature
 
 def pipeline_feature(path,width = 256,stride = 32,scaler=False,threshold_WAMP=30,threshold_ZC=0,threshold_SSC=0,bins=9,ranges=(-10,10)):

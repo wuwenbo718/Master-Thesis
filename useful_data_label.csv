@@ -1,8 +1,8 @@
-,G04_FoG_trial_1_emg.csv,G04_FoG_trial_2_emg.csv,G06_FoG_trial_1_emg.csv,G06_FoG_trial_2_emg.csv,G06_FoG_trial_3_emg.csv,G07_Freezing_Trial1_trial_1_emg.csv,G08_FoG_1_trial_1_emg.csv,G08_FoG_2_trial_1_emg.csv,G11_FoG_trial_1_emg.csv,G11_FoG_trial_2_emg.csv,P379_M050_2_OFF_A_FoG_trial_1_emg.csv,P379_M050_2_OFF_A_FoG_trial_2_emg.csv,P379_M050_2_OFF_A_FoG_trial_3_emg.csv,P379_M050_2_OFF_B_FoG_trial_1_emg.csv,P379_M050_2_OFF_B_FoG_trial_2_emg.csv,P379_M050_2_OFF_B_FoG_trial_3_emg.csv,P551_M050_2_A_FoG_trial_1_emg.csv,P551_M050_2_B_FoG_trial_1_emg.csv,P551_M050_2_B_FoG_trial_2_emg.csv,P812_M050_2_B_FoG_trial_1_emg.csv,P812_M050_2_B_FoG_trial_2_emg.csv,G09_FoG_trial_1_emg.csv,G03_Walking_trial_2_emg.csv
-0,37548,28246,24774,21965,21360,28706,42447,25244,19924,17544,14968,16089,16143,20448,17692,16204,5260,19597,16837,25373,30330,,
-1,12202,14884,,,,30882,48201,158281,560,,520,,721,,1160,3121,,11001,,7808,9245,,
-2,19362,25561,10362,9121,9441,25721,65005,93126,8482,3522,9162,8242,4962,,5283,6641,17801,58528,52488,39366,28329,,
-3,3800,7280,,,,841,,4560,,,681,,,7483,3041,,,600,961,4922,5402,,
-4,,,,,,,,,,,,,,,,,,,,2362,,,
-5,,,,,,,,,,,,,,,,,,,,,,,
-6,,,,,,74681,69843,81080,,,,,,,,,3160,,,,,,
+,G04_FoG_trial_1_emg.csv,G04_FoG_trial_2_emg.csv,G06_FoG_trial_1_emg.csv,G06_FoG_trial_2_emg.csv,G06_FoG_trial_3_emg.csv,G07_Freezing_Trial1_trial_1_emg.csv,G08_FoG_1_trial_1_emg.csv,G08_FoG_2_trial_1_emg.csv,G11_FoG_trial_1_emg.csv,G11_FoG_trial_2_emg.csv,P379_M050_2_OFF_A_FoG_trial_1_emg.csv,P379_M050_2_OFF_A_FoG_trial_2_emg.csv,P379_M050_2_OFF_A_FoG_trial_3_emg.csv,P379_M050_2_OFF_B_FoG_trial_1_emg.csv,P379_M050_2_OFF_B_FoG_trial_2_emg.csv,P379_M050_2_OFF_B_FoG_trial_3_emg.csv,P551_M050_2_A_FoG_trial_1_emg.csv,P551_M050_2_B_FoG_trial_1_emg.csv,P551_M050_2_B_FoG_trial_2_emg.csv,P812_M050_2_B_FoG_trial_1_emg.csv,P812_M050_2_B_FoG_trial_2_emg.csv
+0,37548,28246,24774,21965,21360,28706,42447,25244,19924,17544,14968,16089,16143,20448,17692,16204,5260,19597,16837,25373,30330
+1,12202,14884,,,,30882,48201,158281,560,,520,,721,,1160,3121,,11001,,7808,9245
+2,19362,25561,10362,9121,9441,25721,65005,93126,8482,3522,9162,8242,4962,,5283,6641,17801,58528,52488,39366,28329
+3,3800,7280,,,,841,,4560,,,681,,,7483,3041,,,600,961,4922,5402
+4,,,,,,,,,,,,,,,,,,,,2362,
+5,,,,,,,,,,,,,,,,,,,,,
+6,,,,,,74681,69843,81080,,,,,,,,,3160,,,,

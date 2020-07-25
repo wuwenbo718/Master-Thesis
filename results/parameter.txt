@@ -1,0 +1,15 @@
+Windowsize: 256
+Step: 32
+Threshold for wilson amplitude: 30
+Threshold for zero crossing: 0
+Threshold for slope Sign Change: 1
+EMG Histogram: bins = 9, range=(-70,70)
+model = xgb.XGBClassifier(max_depth=4, 
+                          learning_rate=0.3, 
+                          n_estimators=1000, 
+                          eval_metrics='error',
+                          objective='binary:logistic', 
+                          seed=100,
+                          sub_sabsample=0.8,
+                          reg_lambda = 15,
+                         )

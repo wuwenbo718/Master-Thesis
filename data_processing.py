@@ -100,18 +100,20 @@ def compute_Acti(data):
 
 def compute_AR(data,p=4):
     N = len(data)
-    feature = np.zeros((N,8))
+    M = data.shape[-1]
+    feature = np.zeros((N,M))
     for i in range(N):
-        for j in range(8):
+        for j in range(M):
             ak,_ = AR_est_YW(data[i,:,j],p)
             feature[i,j] = ak[0]
     return feature
 
 def compute_HIST(data,bins=9,ranges=(-10,10)):
     N = len(data)
-    feature = np.zeros((N,bins*8))
+    M = data.shape[-1]
+    feature = np.zeros((N,bins*M))
     for i in range(N):
-        for j in range(8):
+        for j in range(M):
             hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
             feature[i,j*bins:(j+1)*bins] = hist
     return feature
@@ -143,6 +145,7 @@ def generate_feature(data,threshold_WAMP=30,
     return feature
 
 def pipeline_feature(path,width = 256,
+                     columns = None,
                      stride = 32,
                      scaler=False,
                      threshold_WAMP=30,
@@ -160,6 +163,42 @@ def pipeline_feature(path,width = 256,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    if columns != None:
+        emg_data = emg_data[['Time','Label1','Label2']+columns]
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    feature = generate_feature(x,threshold_WAMP=threshold_WAMP,
+                               threshold_ZC=threshold_ZC,
+                               threshold_SSC=threshold_SSC,
+                               bins=bins,
+                               ranges=ranges,
+                               show_para=show_para)
+    return feature,y
+
+def pipeline_selected_feature(path,
+                     columns = None,
+                     drop_cols = None,
+                     width = 256,
+                     stride = 32,
+                     scaler=False,
+                     threshold_WAMP=30,
+                     threshold_ZC=0,
+                     threshold_SSC=0,
+                     bins=9,
+                     ranges=(-10,10),
+                     show_para=True):
+    emg_data = pd.read_csv(path)
+    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+                           'LEFT_TS':emg_data.LEFT_TS.mean(),
+                           'LEFT_BF':emg_data.LEFT_BF.mean(),
+                           'LEFT_RF':emg_data.LEFT_RF.mean(),
+                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
+                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
+                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
+                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    if columns != None:
+        emg_data = emg_data[['Time','Label1','Label2']+columns]
+    if drop_cols != None:
+        emg_data = emg_data.drop(columns = drop_cols)
     x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
     feature = generate_feature(x,threshold_WAMP=threshold_WAMP,
                                threshold_ZC=threshold_ZC,

@@ -3,12 +3,25 @@ from scipy.stats import skew
 import numpy as np
 import pandas as pd
 from nitime.algorithms.autoregressive import AR_est_YW
+import pywt
+from scipy import signal
+from scipy.integrate import cumtrapz
 
 def scale_data(data,scaler):
     X = data.iloc[:,3:]
     X = sc.fit_transform(X)
     data.iloc[:,3:] = X
     return data
+
+def lowpass_filter(data,fn=250):
+    x = np.zeros(data.shape)
+    N,M = data.shape[0::2]
+    wn=2*fn/1000
+    b, a = signal.butter(8, wn, 'lowpass')
+    for i in range(N):
+        for j in range(M):
+            x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
+    return x
 
 def generate_window_slide_data(data,width = 256,stride = 32,scaler=False):
     l = len(data)
@@ -118,6 +131,39 @@ def compute_HIST(data,bins=9,ranges=(-10,10)):
             feature[i,j*bins:(j+1)*bins] = hist
     return feature
 
+def compute_HIST_pd(data,bins=9,ranges=(-10,10)):
+    N = len(data)
+    M = data.shape[-1]
+    feature = np.zeros((N,bins*M))
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(bins):
+        columns_b += ['_HIST%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    #print(index)
+    for i in range(N):
+        for j in range(M):
+            hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
+            feature[i,j*bins:(j+1)*bins] = hist
+    return pd.DataFrame(feature,columns=index)
+
+def compute_MDF(data):
+    N,M = data.shape[0::2]
+    feature = np.zeros((N,M))
+    for i in range(N):
+        for j in range(M):
+            freqs, power=signal.periodogram(data[i,:,j], 1e3)
+            total = (cumtrapz(power,freqs))
+            #print(i,j,np.where(total>=(total[-1]/2)))
+            w=np.where(total>=(total[-1]/2))[0][0]
+            feature[i,j] = freqs[w]
+            #print(w,freqs[w])
+    return feature
+
 def generate_feature(data,threshold_WAMP=30,
                      threshold_ZC=0,
                      threshold_SSC=0,
@@ -137,11 +183,36 @@ def generate_feature(data,threshold_WAMP=30,
     Acti = compute_Acti(data)
     AR = compute_AR(data)
     HIST = compute_HIST(data,bins=bins,ranges=ranges)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST],axis =1)
+    MDF = compute_MDF(data)
+    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF],axis =1)
     if show_para:
         print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
           %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
-        print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST')
+        print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF')
+    return feature
+
+def generate_feature_pd(data,threshold_WAMP=30,
+                     threshold_ZC=0,
+                     threshold_SSC=0,
+                     bins=9,
+                     ranges=(-10,10)):
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    IEMG = pd.DataFrame(compute_IEMG(data),columns=columns+'_IEMG')
+    #MAV = pd.DataFrame(compute_MAV(data),columns=columns+'_MAV')
+    SSI = pd.DataFrame(compute_SSI(data),columns=columns+'_SSI')
+    #VAR = pd.DataFrame(compute_VAR(data),columns=columns+'_VAR')
+    #RMS = pd.DataFrame(compute_RMS(data),columns=columns+'_RMS')
+    WL = pd.DataFrame(compute_WL(data),columns=columns+'_WL')
+    ZC = pd.DataFrame(compute_ZC(data,threshold_ZC),columns=columns+'_ZC')
+    SSC = pd.DataFrame(compute_SSC(data,threshold_SSC),columns=columns+'_SSC')
+    WAMP = pd.DataFrame(compute_WAMP(data,threshold_WAMP),columns=columns+'_WAMP')
+    skew = pd.DataFrame(compute_Skewness(data),columns=columns+'_skew')
+    Acti = pd.DataFrame(compute_Acti(data),columns=columns+'_Acti')
+    AR = pd.DataFrame(compute_AR(data),columns=columns+'_AR')
+    HIST = compute_HIST_pd(data,bins=bins,ranges=ranges)
+    MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
+    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF],axis =1)
     return feature
 
 def pipeline_feature(path,width = 256,
@@ -153,7 +224,8 @@ def pipeline_feature(path,width = 256,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
-                     show_para=True):
+                     show_para=True,
+                     filt = None):
     emg_data = pd.read_csv(path)
     emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
                            'LEFT_TS':emg_data.LEFT_TS.mean(),
@@ -166,6 +238,8 @@ def pipeline_feature(path,width = 256,
     if columns != None:
         emg_data = emg_data[['Time','Label1','Label2']+columns]
     x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    if filt != None:
+        x = lowpass_filter(x,filt)
     feature = generate_feature(x,threshold_WAMP=threshold_WAMP,
                                threshold_ZC=threshold_ZC,
                                threshold_SSC=threshold_SSC,
@@ -173,6 +247,44 @@ def pipeline_feature(path,width = 256,
                                ranges=ranges,
                                show_para=show_para)
     return feature,y
+
+def pipeline_feature_pd(path,width = 256,
+                     stride = 32,
+                     scaler=False,
+                     threshold_WAMP=30,
+                     threshold_ZC=0,
+                     threshold_SSC=0,
+                     bins=9,
+                     ranges=(-10,10),
+                     filt = None):
+    emg_data = pd.read_csv(path)
+    length = len(emg_data)
+    na = emg_data.isna().sum()
+    cri = na > length/10
+    if any(cri):
+        return True, []
+    else:
+        drop = False
+    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+                           'LEFT_TS':emg_data.LEFT_TS.mean(),
+                           'LEFT_BF':emg_data.LEFT_BF.mean(),
+                           'LEFT_RF':emg_data.LEFT_RF.mean(),
+                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
+                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
+                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
+                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    if filt != None:
+        x = lowpass_filter(x,filt)
+    Data = pd.DataFrame(y,columns=['Label'])
+    feature = generate_feature_pd(x,threshold_WAMP=threshold_WAMP,
+                               threshold_ZC=threshold_ZC,
+                               threshold_SSC=threshold_SSC,
+                               bins=bins,
+                               ranges=ranges)
+    Data = Data.join(feature)
+    Data['File']=path.split('/')[-1]
+    return drop, Data
 
 def pipeline_selected_feature(path,
                      columns = None,
@@ -207,3 +319,22 @@ def pipeline_selected_feature(path,
                                ranges=ranges,
                                show_para=show_para)
     return feature,y
+
+def pipeline_cwt(path,
+            width = 256,
+            stride = 64,
+            scaler = False,
+            width_c = 32,
+            wavelet = 'mexh'):
+    emg_data = pd.read_csv(path)
+    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+                           'LEFT_TS':emg_data.LEFT_TS.mean(),
+                           'LEFT_BF':emg_data.LEFT_BF.mean(),
+                           'LEFT_RF':emg_data.LEFT_RF.mean(),
+                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
+                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
+                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
+                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    cwt = generate_CWT_feature(x,widths=width_c,wavelet=wavelet)
+    return cwt, y

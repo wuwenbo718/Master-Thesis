@@ -164,6 +164,58 @@ def compute_MDF(data):
             #print(w,freqs[w])
     return feature
 
+def compute_MNF(data):
+    N,M = data.shape[0::2]
+    feature = np.zeros((N,M))
+    for i in range(N):
+        for j in range(M):
+            freqs, power=signal.periodogram(data[i,:,j], 1e3)
+            feature[i,j] = freqs@power/power.sum()
+    return feature
+
+def mDWT(data):
+    wa = pywt.wavedec(data,'db7',3)
+    wa = np.concatenate(wa)
+    N = len(wa)
+    S = int(np.log2(N))
+    M = []
+    for i in range(S):
+        C = N//(2**(i+1))-1
+        #print(C)
+        M.append(np.abs(wa[:C+1]).sum())
+    return M
+    
+def compute_mDWT(data):
+    N,M = data.shape[0::2]
+    feature = []
+    for i in range(N):
+        temp = []
+        for j in range(M):
+            temp.extend(mDWT(data[i,:,j]))
+        feature.append(temp)
+    return feature
+
+def compute_mDWT_pd(data):
+    N,M = data.shape[0::2]
+    feature = []
+    for i in range(N):
+        temp = []
+        for j in range(M):
+            temp.extend(mDWT(data[i,:,j]))
+        feature.append(temp)
+        
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(len(feature[0])//8):
+        columns_b += ['_mDWT%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+        
+    return pd.DataFrame(feature,columns=index)
+
 def generate_feature(data,threshold_WAMP=30,
                      threshold_ZC=0,
                      threshold_SSC=0,
@@ -184,11 +236,13 @@ def generate_feature(data,threshold_WAMP=30,
     AR = compute_AR(data)
     HIST = compute_HIST(data,bins=bins,ranges=ranges)
     MDF = compute_MDF(data)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF],axis =1)
+    MNF = compute_MNF(data)
+    mDWT = compute_mDWT(data)
+    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT],axis =1)
     if show_para:
         print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
           %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
-        print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF')
+        print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT')
     return feature
 
 def generate_feature_pd(data,threshold_WAMP=30,
@@ -212,7 +266,9 @@ def generate_feature_pd(data,threshold_WAMP=30,
     AR = pd.DataFrame(compute_AR(data),columns=columns+'_AR')
     HIST = compute_HIST_pd(data,bins=bins,ranges=ranges)
     MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
-    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF],axis =1)
+    MNF = pd.DataFrame(compute_MNF(data),columns=columns+'_MNF')
+    mDWT = compute_mDWT_pd(data)
+    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT],axis =1)
     return feature
 
 def pipeline_feature(path,width = 256,
@@ -256,16 +312,23 @@ def pipeline_feature_pd(path,width = 256,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
-                     filt = None):
+                     filt = None,
+                     drop_na=False):
     emg_data = pd.read_csv(path)
-    length = len(emg_data)
-    na = emg_data.isna().sum()
-    cri = na > length/10
-    if any(cri):
-        return True, []
-    else:
+
+    if drop_na:
+        emg_data = emg_data.dropna().reset_index(drop=True)
+        #print(emg_data)
         drop = False
-    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+    else:
+        length = len(emg_data)
+        na = emg_data.isna().sum()
+        cri = na > length/10
+        if any(cri):
+            return True, []
+        else:
+            drop = False
+        emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
                            'LEFT_TS':emg_data.LEFT_TS.mean(),
                            'LEFT_BF':emg_data.LEFT_BF.mean(),
                            'LEFT_RF':emg_data.LEFT_RF.mean(),

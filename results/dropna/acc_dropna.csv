@@ -1,0 +1,5 @@
+,xgboost
+train,1.0
+valid,0.961642
+test,0.962002
+rest data,0.987563

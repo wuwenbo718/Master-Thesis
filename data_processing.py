@@ -57,13 +57,56 @@ def generate_window_slide_data(data,width = 256,stride = 32,scaler=False):
 #    return cwtmatr
 
 
-def generate_CWT_feature(data,widths=260,wavelet = 'mexh'):
+def generate_CWT_feature(data,scale=32,wavelet = 'mexh'):
     n,t,c = data.shape
-    cwtmatr = np.zeros((n,widths,t,c))
+    cwtmatr = np.zeros((n,scale,t,c))
     for i in range(n):
         for j in range(c):
-            cwtmatr[i,:,:,j],_ = pywt.cwt(data[i,:,j],np.arange(1,widths+1),wavelet)
+            cwtmatr[i,:,:,j],_ = pywt.cwt(data[i,:,j],np.arange(1,scale+1),wavelet)
     return cwtmatr
+
+def compute_CWT_feature(data,scale=32,wavelet = 'mexh'):
+    n,t,c = data.shape
+    cwt = np.zeros((n,4*c))
+    #print(cwt.shape)
+    scales = np.arange(1,scale+1)
+    for i in range(n):
+        for j in range(c):
+            cwtmatr,_ = pywt.cwt(data[i,:,j],scales,wavelet)
+            mean_abs = np.mean(np.abs(cwtmatr),axis=1)
+            mean_coe = np.mean(mean_abs)
+            min_coe = np.min(mean_abs)
+            mean_scale = mean_abs@scales/mean_abs.sum()
+            total = (cumtrapz(mean_abs,scales))
+            #print(i,j,total[-1])
+            w=np.where(total>=(total[-1]/2))[0][0]
+            median_scale = w
+            #print(i,j*4,(j+1)*4)
+            cwt[i,j*4:(j+1)*4] = [mean_coe,min_coe,mean_scale,median_scale]
+    return cwt
+
+def standard(x):
+    results = np.array([])
+    for i in x:
+        xs = np.array(i).astype(float)
+        xs -= np.mean(i)
+        xs /= np.std(i)
+        results = np.concatenate([results,xs])
+    return results
+
+def compute_DWT(data,wavelet='db7',level=3):
+    N,M = data.shape[0::2]
+    feature = []
+    sc = StandardScaler()
+    for i in range(N):
+        temp = []
+        for j in range(M):
+            wa = pywt.wavedec(data[i,:,j],wavelet,level)
+            #wa = np.concatenate(wa)
+            wa = standard(wa)
+            temp.extend(wa)
+        feature.append(temp)
+    return feature    
 
 def compute_IEMG(data):
     IEMG = np.sum(np.abs(data),axis=1)
@@ -401,3 +444,55 @@ def pipeline_cwt(path,
     x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
     cwt = generate_CWT_feature(x,widths=width_c,wavelet=wavelet)
     return cwt, y
+
+def pipeline_dwt(path,
+            width = 256,
+            stride = 64,
+            scaler = False,
+            level = 3,
+            wavelet = 'db7'):
+
+    emg_data = pd.read_csv(path)
+    emg_data = emg_data.dropna().reset_index(drop=True)
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    dwt = compute_DWT(x,wavelet,level)
+    
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(len(dwt[0])//8):
+        columns_b += ['_%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    feature = pd.DataFrame(dwt,columns=index)
+    Data = pd.DataFrame(y,columns=['Label'])
+    Data = Data.join(feature)
+    Data['File']=path.split('/')[-1]
+    return feature
+
+def pipeline_cwt_feature(path,
+            width = 256,
+            stride = 64,
+            scaler = False,
+            scale = 32,
+            wavelet = 'mexh'):
+
+    emg_data = pd.read_csv(path)
+    emg_data = emg_data.dropna().reset_index(drop=True)
+    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    cwt = compute_CWT_feature(x,scale,wavelet)
+    #print(cwt)
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = ['_Mean_Coe','_Min_Coe','_Mean_Scale','_Median_Scale']
+    index = []
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    feature = pd.DataFrame(cwt,columns=index)
+    Data = pd.DataFrame(y,columns=['Label'])
+    Data = Data.join(feature)
+    Data['File']=path.split('/')[-1]
+    return Data

@@ -13,7 +13,7 @@ def scale_data(data,scaler):
     data.iloc[:,3:] = X
     return data
 
-def lowpass_filter(data,fn=250):
+def lowpass_filter(data,fn=350):
     x = np.zeros(data.shape)
     N,M = data.shape[0::2]
     wn=2*fn/1000
@@ -23,7 +23,12 @@ def lowpass_filter(data,fn=250):
             x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
     return x
 
-def generate_window_slide_data(data,width = 256,stride = 32,scaler=False):
+def generate_window_slide_data(data,width = 256,stride = 32,scaler=False,same_label=False):
+    
+    if same_label:
+        ind = (data.Label1 == data.Label2)
+        data = data.loc[ind,:].reset_index(drop=True)
+        
     l = len(data)
     end = (l-width)//stride+1
     X = []
@@ -43,6 +48,7 @@ def generate_window_slide_data(data,width = 256,stride = 32,scaler=False):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
                 X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
+                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
                 continue
     
@@ -356,7 +362,8 @@ def pipeline_feature_pd(path,width = 256,
                      bins=9,
                      ranges=(-10,10),
                      filt = None,
-                     drop_na=False):
+                     drop_na=False,
+                     same_label=False):
     emg_data = pd.read_csv(path)
 
     if drop_na:
@@ -379,7 +386,11 @@ def pipeline_feature_pd(path,width = 256,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    x,y = generate_window_slide_data(emg_data,
+                          width=width,
+                          stride=stride,
+                          scaler=scaler,
+                          same_label=same_label)
     if filt != None:
         x = lowpass_filter(x,filt)
     Data = pd.DataFrame(y,columns=['Label'])
@@ -431,7 +442,8 @@ def pipeline_cwt(path,
             stride = 64,
             scaler = False,
             width_c = 32,
-            wavelet = 'mexh'):
+            wavelet = 'mexh',
+            same_label=False):
     emg_data = pd.read_csv(path)
     emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
                            'LEFT_TS':emg_data.LEFT_TS.mean(),
@@ -441,7 +453,11 @@ def pipeline_cwt(path,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    x,y = generate_window_slide_data(emg_data,
+                          width=width,
+                          stride=stride,
+                          scaler=scaler,
+                          same_label=False)
     cwt = generate_CWT_feature(x,widths=width_c,wavelet=wavelet)
     return cwt, y
 
@@ -450,11 +466,16 @@ def pipeline_dwt(path,
             stride = 64,
             scaler = False,
             level = 3,
-            wavelet = 'db7'):
+            wavelet = 'db7',
+            same_label=False):
 
     emg_data = pd.read_csv(path)
     emg_data = emg_data.dropna().reset_index(drop=True)
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    x,y = generate_window_slide_data(emg_data,
+                          width=width,
+                          stride=stride,
+                          scaler=scaler,
+                          same_label=same_label)
     dwt = compute_DWT(x,wavelet,level)
     
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
@@ -473,15 +494,23 @@ def pipeline_dwt(path,
     return feature
 
 def pipeline_cwt_feature(path,
-            width = 256,
-            stride = 64,
-            scaler = False,
-            scale = 32,
-            wavelet = 'mexh'):
+                width = 256,
+                stride = 64,
+                scaler = False,
+                scale = 32,
+                wavelet = 'mexh',
+                filt = None,
+                same_label=False):
 
     emg_data = pd.read_csv(path)
     emg_data = emg_data.dropna().reset_index(drop=True)
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
+    x,y = generate_window_slide_data(emg_data,
+                          width=width,
+                          stride=stride,
+                          scaler=scaler,
+                          same_label=same_label)
+    if filt != None:
+        x = lowpass_filter(x,filt)
     cwt = compute_CWT_feature(x,scale,wavelet)
     #print(cwt)
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',

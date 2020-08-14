@@ -7,11 +7,28 @@ import pywt
 from scipy import signal
 from scipy.integrate import cumtrapz
 
-def scale_data(data,scaler):
-    X = data.iloc[:,3:]
-    X = sc.fit_transform(X)
-    data.iloc[:,3:] = X
-    return data
+#def scale_data(data,scaler):
+#    X = data.iloc[:,3:]
+#    X = sc.fit_transform(X)
+#    data.iloc[:,3:] = X
+#    return data
+
+def scale_data(data,sc,cwt=True):
+    M,N,I,J = data.shape
+    result = np.zeros((M,N,I,J))
+    #sc = StandardScaler()
+    if cwt:
+        for i in range(M):
+            for j in range(J):
+                cwtmatr = data[i,:,:,j]
+                result[i,:,:,j] = sc.fit_transform(cwtmatr)
+                
+        return result
+    else:
+        X = data.iloc[:,3:]
+        X = sc.fit_transform(X)
+        data.iloc[:,3:] = X
+        return data
 
 def lowpass_filter(data,fn=350):
     x = np.zeros(data.shape)
@@ -443,9 +460,13 @@ def pipeline_cwt(path,
             scaler = False,
             width_c = 32,
             wavelet = 'mexh',
-            same_label=False):
+            same_label=False,
+            dropna=True):
     emg_data = pd.read_csv(path)
-    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
+    if dropna:
+        emg_data = emg_data.dropna().reset_index(drop=True)
+    else:
+        emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
                            'LEFT_TS':emg_data.LEFT_TS.mean(),
                            'LEFT_BF':emg_data.LEFT_BF.mean(),
                            'LEFT_RF':emg_data.LEFT_RF.mean(),
@@ -458,7 +479,7 @@ def pipeline_cwt(path,
                           stride=stride,
                           scaler=scaler,
                           same_label=False)
-    cwt = generate_CWT_feature(x,widths=width_c,wavelet=wavelet)
+    cwt = generate_CWT_feature(x,scale=width_c,wavelet=wavelet)
     return cwt, y
 
 def pipeline_dwt(path,

@@ -1,4 +1,4 @@
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler,normalize
 from scipy.stats import skew
 import numpy as np
 import pandas as pd
@@ -34,13 +34,13 @@ def lowpass_filter(data,fn=350):
     x = np.zeros(data.shape)
     N,M = data.shape[0::2]
     wn=2*fn/1000
-    b, a = signal.butter(8, wn, 'lowpass')
+    b, a = signal.butter(4, wn, 'lowpass')
     for i in range(N):
         for j in range(M):
             x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
     return x
 
-def generate_window_slide_data(data,width = 256,stride = 32,scaler=False,same_label=False):
+def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_label=False):
     
     if same_label:
         ind = (data.Label1 == data.Label2)
@@ -51,11 +51,12 @@ def generate_window_slide_data(data,width = 256,stride = 32,scaler=False,same_la
     X = []
     Y = []
     if scaler:
-        sc = StandardScaler(with_mean = False)
+        #sc = StandardScaler(with_mean = False)
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                #x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
                 X += [x_sc]
                 #print(set(data.Label2[i*stride:i*stride+width]))
             else:
@@ -239,8 +240,9 @@ def compute_MNF(data):
             feature[i,j] = freqs@power/power.sum()
     return feature
 
-def mDWT(data):
-    wa = pywt.wavedec(data,'db7',3)
+def mDWT(data,wavelet='db7',level=3):
+    wa = pywt.wavedec(data,wavelet,level=level)
+    #print(len(wa))
     wa = np.concatenate(wa)
     N = len(wa)
     S = int(np.log2(N))
@@ -251,23 +253,23 @@ def mDWT(data):
         M.append(np.abs(wa[:C+1]).sum())
     return M
     
-def compute_mDWT(data):
+def compute_mDWT(data,wavelet='db7',level=3):
     N,M = data.shape[0::2]
     feature = []
     for i in range(N):
         temp = []
         for j in range(M):
-            temp.extend(mDWT(data[i,:,j]))
+            temp.extend(mDWT(data[i,:,j],wavelet,level))
         feature.append(temp)
     return feature
 
-def compute_mDWT_pd(data):
+def compute_mDWT_pd(data,wavelet='db7',level=3):
     N,M = data.shape[0::2]
     feature = []
     for i in range(N):
         temp = []
         for j in range(M):
-            temp.extend(mDWT(data[i,:,j]))
+            temp.extend(mDWT(data[i,:,j],wavelet,level))
         feature.append(temp)
         
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
@@ -315,7 +317,9 @@ def generate_feature_pd(data,threshold_WAMP=30,
                      threshold_ZC=0,
                      threshold_SSC=0,
                      bins=9,
-                     ranges=(-10,10)):
+                     ranges=(-10,10),
+                     wavelet='db7',
+                     level=3):
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     IEMG = pd.DataFrame(compute_IEMG(data),columns=columns+'_IEMG')
@@ -333,7 +337,7 @@ def generate_feature_pd(data,threshold_WAMP=30,
     HIST = compute_HIST_pd(data,bins=bins,ranges=ranges)
     MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
     MNF = pd.DataFrame(compute_MNF(data),columns=columns+'_MNF')
-    mDWT = compute_mDWT_pd(data)
+    mDWT = compute_mDWT_pd(data,wavelet,level)
     feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT],axis =1)
     return feature
 
@@ -346,6 +350,7 @@ def pipeline_feature(path,width = 256,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
+                     level=3,
                      show_para=True,
                      filt = None):
     emg_data = pd.read_csv(path)
@@ -367,7 +372,8 @@ def pipeline_feature(path,width = 256,
                                threshold_SSC=threshold_SSC,
                                bins=bins,
                                ranges=ranges,
-                               show_para=show_para)
+                               show_para=show_para,
+                               level=level)
     return feature,y
 
 def pipeline_feature_pd(path,width = 256,
@@ -378,6 +384,7 @@ def pipeline_feature_pd(path,width = 256,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
+                     level=3,
                      filt = None,
                      drop_na=False,
                      same_label=False):
@@ -415,7 +422,8 @@ def pipeline_feature_pd(path,width = 256,
                                threshold_ZC=threshold_ZC,
                                threshold_SSC=threshold_SSC,
                                bins=bins,
-                               ranges=ranges)
+                               ranges=ranges,
+                               level=level)
     Data = Data.join(feature)
     Data['File']=path.split('/')[-1]
     return drop, Data

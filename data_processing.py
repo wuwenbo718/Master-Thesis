@@ -1,4 +1,4 @@
-from sklearn.preprocessing import StandardScaler,normalize
+from sklearn.preprocessing import StandardScaler,normalize,MinMaxScaler
 from scipy.stats import skew
 import numpy as np
 import pandas as pd
@@ -6,6 +6,8 @@ from nitime.algorithms.autoregressive import AR_est_YW
 import pywt
 from scipy import signal
 from scipy.integrate import cumtrapz
+import joblib
+import matplotlib.pyplot as plt
 
 #def scale_data(data,scaler):
 #    X = data.iloc[:,3:]
@@ -41,7 +43,7 @@ def lowpass_filter(data,fn=350):
     return x
 
 def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_label=False):
-    
+    sc = joblib.load('./model/scalar')
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
@@ -55,9 +57,9 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                #x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                X += [x_sc]
+                x_sc = sc.transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                X += [np.clip(x_sc,-10,10)]
                 #print(set(data.Label2[i*stride:i*stride+width]))
             else:
                 continue
@@ -65,6 +67,7 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
+                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
                 X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
                 #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
@@ -83,17 +86,24 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
 
 def generate_CWT_feature(data,scale=32,wavelet = 'mexh'):
     n,t,c = data.shape
+    fc = pywt.central_frequency(wavelet)
+    cparam = 2 * fc * scale
+    scales = cparam / np.arange(int(scale+1), 1, -1)
     cwtmatr = np.zeros((n,scale,t,c))
     for i in range(n):
         for j in range(c):
-            cwtmatr[i,:,:,j],_ = pywt.cwt(data[i,:,j],np.arange(1,scale+1),wavelet)
+            temp,_ = pywt.cwt(data[i,:,j],scales,wavelet)
+            cwtmatr[i,:,:,j] = abs(temp)
     return cwtmatr
 
 def compute_CWT_feature(data,scale=32,wavelet = 'mexh'):
     n,t,c = data.shape
     cwt = np.zeros((n,4*c))
     #print(cwt.shape)
-    scales = np.arange(1,scale+1)
+    fc = pywt.central_frequency(wavelet)
+    cparam = 2 * fc * scale
+    scales = cparam / np.arange(int(scale+1), 1, -1)
+    #scales = np.arange(1,scale+1)
     for i in range(n):
         for j in range(c):
             cwtmatr,_ = pywt.cwt(data[i,:,j],scales,wavelet)
@@ -188,6 +198,25 @@ def compute_AR(data,p=4):
             feature[i,j] = ak[0]
     return feature
 
+def compute_AR_pd(data,p=4):
+    N = len(data)
+    M = data.shape[-1]
+    feature = np.zeros((N,M*p))
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(p):
+        columns_b += ['_AR%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    for i in range(N):
+        for j in range(M):
+            ak,_ = AR_est_YW(data[i,:,j],p)
+            feature[i,j*p:(j+1)*p] = ak
+    return pd.DataFrame(feature,columns=index)
+
 def compute_HIST(data,bins=9,ranges=(-10,10)):
     N = len(data)
     M = data.shape[-1]
@@ -217,6 +246,53 @@ def compute_HIST_pd(data,bins=9,ranges=(-10,10)):
             hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
             feature[i,j*bins:(j+1)*bins] = hist
     return pd.DataFrame(feature,columns=index)
+
+def compute_FHIST_pd(data,bins=5,ranges=(0,300),threshold = 0.5):
+    N = len(data)
+    M = data.shape[-1]
+    feature = np.zeros((N,bins*M))
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(bins):
+        columns_b += ['_FHIST%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    #print(index)
+    for i in range(N):
+        for j in range(M):
+            freqs, power=signal.periodogram(data[i,:,j], 1e3)
+            #sc = MinMaxScaler((0,1))
+            #power = sc.fit_transform(power[:,np.newaxis])
+            ind = (power > threshold)#[:,0]
+            hist,_ = np.histogram(freqs[ind],bins=bins,range=ranges)
+            feature[i,j*bins:(j+1)*bins] = hist
+    return pd.DataFrame(feature,columns=index)    
+
+def compute_MaxFreq_pd(data,num=3):
+    N = len(data)
+    M = data.shape[-1]
+    feature = np.zeros((N,num*M))
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(num):
+        columns_b += ['_MF%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    #print(index)
+    for i in range(N):
+        for j in range(M):
+            freqs, power=signal.periodogram(data[i,:,j], 1e3)
+            #sc = MinMaxScaler((0,1))
+            #power = sc.fit_transform(power[:,np.newaxis])
+            ind = np.argsort(-power)[:num]
+            feature[i,j*num:(j+1)*num] = freqs[ind]
+    return pd.DataFrame(feature,columns=index)  
 
 def compute_MDF(data):
     N,M = data.shape[0::2]
@@ -318,6 +394,10 @@ def generate_feature_pd(data,threshold_WAMP=30,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
+                     fbins=5,
+                     franges=(0,300),
+                     threshold_F=0.5,
+                     num = 3,
                      wavelet='db7',
                      level=3):
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
@@ -334,11 +414,14 @@ def generate_feature_pd(data,threshold_WAMP=30,
     skew = pd.DataFrame(compute_Skewness(data),columns=columns+'_skew')
     Acti = pd.DataFrame(compute_Acti(data),columns=columns+'_Acti')
     AR = pd.DataFrame(compute_AR(data),columns=columns+'_AR')
+    #AR = compute_AR_pd(data)
     HIST = compute_HIST_pd(data,bins=bins,ranges=ranges)
+    #FHIST = compute_FHIST_pd(data,bins=fbins,ranges=franges,threshold=threshold_F)
+    MF = compute_MaxFreq_pd(data,num=num)
     MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
     MNF = pd.DataFrame(compute_MNF(data),columns=columns+'_MNF')
     mDWT = compute_mDWT_pd(data,wavelet,level)
-    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT],axis =1)
+    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MF,MDF,MNF,mDWT],axis =1)
     return feature
 
 def pipeline_feature(path,width = 256,
@@ -384,6 +467,10 @@ def pipeline_feature_pd(path,width = 256,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
+                     fbins=5,
+                     franges=(0,300),
+                     threshold_F=0.5,
+                     num = 3,
                      level=3,
                      filt = None,
                      drop_na=False,
@@ -410,7 +497,17 @@ def pipeline_feature_pd(path,width = 256,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    x,y = generate_window_slide_data(emg_data,
+    if filt != None:
+        fn = filt[0]
+        wn=2*fn/1000
+        #fn1 = 100
+        #wn1 = 2*fn1/1000
+        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
+        b, a = signal.butter(4, wn, filt[1])
+        for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
+            emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
+    emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
+    x,y = generate_window_slide_data(np.clip(emg_data,-500,500),
                           width=width,
                           stride=stride,
                           scaler=scaler,
@@ -423,7 +520,11 @@ def pipeline_feature_pd(path,width = 256,
                                threshold_SSC=threshold_SSC,
                                bins=bins,
                                ranges=ranges,
-                               level=level)
+                               fbins=fbins,
+                               franges=franges,
+                               threshold_F=threshold_F,
+                               level=level,
+                               num = num)
     Data = Data.join(feature)
     Data['File']=path.split('/')[-1]
     return drop, Data
@@ -466,10 +567,12 @@ def pipeline_cwt(path,
             width = 256,
             stride = 64,
             scaler = False,
+            norm = False,
             width_c = 32,
             wavelet = 'mexh',
             same_label=False,
-            dropna=True):
+            dropna=True,
+            filt=None):
     emg_data = pd.read_csv(path)
     if dropna:
         emg_data = emg_data.dropna().reset_index(drop=True)
@@ -482,11 +585,22 @@ def pipeline_cwt(path,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
+    if norm:
+        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
+    if filt != None:
+        fn = filt
+        wn=2*fn/1000
+        #fn1 = 100
+        #wn1 = 2*fn1/1000
+        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
+        b, a = signal.butter(4, wn, 'lowpass')
+        for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
+            emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
     x,y = generate_window_slide_data(emg_data,
                           width=width,
                           stride=stride,
                           scaler=scaler,
-                          same_label=False)
+                          same_label=same_label)
     cwt = generate_CWT_feature(x,scale=width_c,wavelet=wavelet)
     return cwt, y
 
@@ -494,12 +608,15 @@ def pipeline_dwt(path,
             width = 256,
             stride = 64,
             scaler = False,
+            norm = False,
             level = 3,
             wavelet = 'db7',
             same_label=False):
 
     emg_data = pd.read_csv(path)
     emg_data = emg_data.dropna().reset_index(drop=True)
+    if norm:
+        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
     x,y = generate_window_slide_data(emg_data,
                           width=width,
                           stride=stride,
@@ -526,6 +643,7 @@ def pipeline_cwt_feature(path,
                 width = 256,
                 stride = 64,
                 scaler = False,
+                norm = False,
                 scale = 32,
                 wavelet = 'mexh',
                 filt = None,
@@ -533,6 +651,8 @@ def pipeline_cwt_feature(path,
 
     emg_data = pd.read_csv(path)
     emg_data = emg_data.dropna().reset_index(drop=True)
+    if norm:
+        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
     x,y = generate_window_slide_data(emg_data,
                           width=width,
                           stride=stride,

@@ -2,7 +2,7 @@ clc,clear;
 
 %%
 
-path = './data/P812_M050_2_B_FoG_trial_1_emg.csv';
+path = './data/G08_FoG_2_trial_1_emg.csv';
 M = csvread(path,1,0);
 Fs=1e3;
 f1 = 50;
@@ -77,6 +77,9 @@ figure();
 cwt(Mf(5123:5161),1e3);
 figure();
 cwt(Mf(5162:7842),1e3);
+%%
+figure();
+cwt(M(:,4),1e3)
 
 %%
 figure();

@@ -6,6 +6,7 @@ from nitime.algorithms.autoregressive import AR_est_YW
 import pywt
 from scipy import signal
 from scipy.integrate import cumtrapz
+from scipy.stats import zscore
 import joblib
 import matplotlib.pyplot as plt
 
@@ -32,7 +33,7 @@ def scale_data(data,sc,cwt=True):
         data.iloc[:,3:] = X
         return data
 
-def lowpass_filter(data,fn=350):
+def lowpass_filter(data):
     x = np.zeros(data.shape)
     N,M = data.shape[0::2]
     wn=2*fn/1000
@@ -42,8 +43,24 @@ def lowpass_filter(data,fn=350):
             x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
     return x
 
+def bandpass_filter(data,fn=350):
+    x = np.zeros(data.shape)
+    N,M = data.shape[0::2]
+    #wn=2*fn/1000
+    fn = 10
+    wn=2*fn/1000
+    fn1 = 350
+    wn1=2*fn1/1000
+    b, a = signal.butter(4, [wn,wn1], 'bandpass')
+    #b, a = signal.butter(4, wn, 'lowpass')
+    for i in range(N):
+        for j in range(M):
+            x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
+    return x
+
 def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_label=False):
-    sc = joblib.load('./model/scalar')
+    #sc = joblib.load('./model/scalar')
+    #sc = MinMaxScaler()
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
@@ -53,13 +70,13 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
     X = []
     Y = []
     if scaler:
-        #sc = StandardScaler(with_mean = False)
+        #sc = StandardScaler(with_mean = True)
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                x_sc = sc.transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                X += [np.clip(x_sc,-10,10)]
+                #x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                X += [x_sc]
                 #print(set(data.Label2[i*stride:i*stride+width]))
             else:
                 continue
@@ -74,6 +91,30 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
                 continue
     
     return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
+
+def generate_window_slide_data2(emg_data,width = 256,stride = 64,same_label=False):
+    fn = 20
+    wn=2*fn/1000
+    fn1 = 300
+    wn1 = 2*fn1/1000
+    b, a = signal.butter(4, [wn,wn1], 'bandpass')
+    fs = 1000.0  # Sample frequency (Hz)
+    f0 = 50  # Frequency to be removed from signal (Hz)
+    Q = 100.0  # Quality factor
+    b1, a1 = signal.iirnotch(f0, Q, fs)
+    b2, a2 = signal.iirnotch(75.,Q, fs)
+    #b, a = signal.butter(4, wn, filt[1])
+    for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
+        emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
+        emg_data.loc[:,i] = signal.filtfilt(b1, a1, emg_data.loc[:,i])
+        emg_data.loc[:,i] = signal.filtfilt(b2, a2, emg_data.loc[:,i])
+        ind = abs(zscore(emg_data.loc[:,i]))<10
+        emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
+    sc = StandardScaler()
+    emg_data.iloc[:,3:] = sc.fit_transform(emg_data.iloc[:,3:])
+    x,y = generate_window_slide_data(emg_data,width = width,stride = stride,scaler=False,same_label=same_label)
+    
+    return x,y
 
 #def generate_CWT_feature(data,widths=260,wavelet = signal.ricker):
 #    n,t,c = data.shape
@@ -498,22 +539,24 @@ def pipeline_feature_pd(path,width = 256,
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
     if filt != None:
-        fn = filt[0]
+        fn = 10
         wn=2*fn/1000
-        #fn1 = 100
-        #wn1 = 2*fn1/1000
+        fn1 = 350
+        wn1 = 2*fn1/1000
         #b, a = signal.butter(4, [wn,wn1], 'bandpass')
-        b, a = signal.butter(4, wn, filt[1])
+        b, a = signal.butter(1, wn, 'highpass')
         for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
             emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
-    emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
-    x,y = generate_window_slide_data(np.clip(emg_data,-500,500),
+    #emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
+    #mc = MinMaxScaler((-1,1))
+    #emg_data.iloc[:,3:] = mc.fit_transform(emg_data.iloc[:,3:])
+    x,y = generate_window_slide_data(emg_data,
                           width=width,
                           stride=stride,
                           scaler=scaler,
                           same_label=same_label)
-    if filt != None:
-        x = lowpass_filter(x,filt)
+    #if filt != None:
+    #    x = bandpass_filter(x)
     Data = pd.DataFrame(y,columns=['Label'])
     feature = generate_feature_pd(x,threshold_WAMP=threshold_WAMP,
                                threshold_ZC=threshold_ZC,
@@ -528,6 +571,63 @@ def pipeline_feature_pd(path,width = 256,
     Data = Data.join(feature)
     Data['File']=path.split('/')[-1]
     return drop, Data
+
+def pipeline_feature_pd2(path,width = 256,
+                     stride = 32,
+                     scaler=False,
+                     threshold_WAMP=30,
+                     threshold_ZC=0,
+                     threshold_SSC=0,
+                     bins=9,
+                     ranges=(-10,10),
+                     fbins=5,
+                     franges=(0,300),
+                     threshold_F=0.5,
+                     num = 3,
+                     level=3,
+                     same_label=False):
+    emg_data = pd.read_csv(path)
+
+    emg_data = emg_data.dropna().reset_index(drop=True)
+
+    fn = 20
+    wn=2*fn/1000
+    fn1 = 300
+    wn1 = 2*fn1/1000
+    b, a = signal.butter(4, [wn,wn1], 'bandpass')
+    fs = 1000.0  # Sample frequency (Hz)
+    f0 = 50  # Frequency to be removed from signal (Hz)
+    Q = 100.0  # Quality factor
+    b1, a1 = signal.iirnotch(f0, Q, fs)
+    #b, a = signal.butter(4, wn, filt[1])
+    for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
+        emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
+        emg_data.loc[:,i] = signal.filtfilt(b1, a1, emg_data.loc[:,i])
+        ind = abs(zscore(emg_data.loc[:,i]))<10
+        emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
+    sc = StandardScaler()
+    emg_data.iloc[:,3:] = sc.fit_transform(emg_data.iloc[:,3:])
+    
+    x,y = generate_window_slide_data(emg_data,
+                          width=width,
+                          stride=stride,
+                          scaler=scaler,
+                          same_label=same_label)
+
+    Data = pd.DataFrame(y,columns=['Label'])
+    feature = generate_feature_pd(x,threshold_WAMP=threshold_WAMP,
+                               threshold_ZC=threshold_ZC,
+                               threshold_SSC=threshold_SSC,
+                               bins=bins,
+                               ranges=ranges,
+                               fbins=fbins,
+                               franges=franges,
+                               threshold_F=threshold_F,
+                               level=level,
+                               num = num)
+    Data = Data.join(feature)
+    Data['File']=path.split('/')[-1]
+    return Data
 
 def pipeline_selected_feature(path,
                      columns = None,
@@ -585,17 +685,26 @@ def pipeline_cwt(path,
                            'RIGHT_TS':emg_data.RIGHT_TS.mean(),
                            'RIGHT_BF':emg_data.RIGHT_BF.mean(),
                            'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    if norm:
-        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
+    
+    emg_data.iloc[:,3:]=np.clip(emg_data.iloc[:,3:],-500,500)
+    
     if filt != None:
         fn = filt
         wn=2*fn/1000
-        #fn1 = 100
-        #wn1 = 2*fn1/1000
-        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
-        b, a = signal.butter(4, wn, 'lowpass')
+        fn1 = 350
+        wn1 = 2*fn1/1000
+        b, a = signal.butter(4, [wn,wn1], 'bandpass')
+        #b, a = signal.butter(4, wn, 'lowpass')
         for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
             emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
+            
+    #ind = abs(zscore(emg_data.loc[:,i]))<10
+    #emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
+            
+    if norm:
+        ms = MinMaxScaler()
+        emg_data.iloc[:,3:] = ms.fit_transform(emg_data.iloc[:,3:])
+        
     x,y = generate_window_slide_data(emg_data,
                           width=width,
                           stride=stride,

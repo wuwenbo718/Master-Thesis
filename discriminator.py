@@ -187,7 +187,7 @@ class Discriminator():
         self.model = self.build_critic()
         
     def make_wavelet_expansion(self, input_tensor):
-        input_tensor = Reshape((input_tensor.shape[-1],1))(input_tensor)
+        #input_tensor = Reshape((input_tensor.shape[-1],1))(input_tensor)
         print(input_tensor.shape)
         low_pass, high_pass  = pywt.Wavelet(self.wavelet_mother).filter_bank[:2]
         low_pass_filter = np.array(low_pass)
@@ -198,6 +198,7 @@ class Discriminator():
         wv_kwargs = {
             "filters":1,
             "kernel_size":len(low_pass),
+            "strides":2, 
             "use_bias":False, 
             "padding":"same", 
             "trainable":trainable,
@@ -207,24 +208,41 @@ class Discriminator():
         detail_coefficients = []
 
         last_approximant = input_tensor
+        last_approximant = K.reshape(last_approximant,(-1,last_approximant.shape[-2],last_approximant.shape[-1],1))
         for i in range(n_levels):
             lpf = low_pass_filter
             hpf = high_pass_filter
             #print(lpf.reshape((-1, int(self.channels))).shape)
-            a_n = Conv1D(
-                kernel_initializer=keras.initializers.Constant(lpf.reshape((-1, 1))),
-                name="low_pass_{}".format(i),
-                **wv_kwargs
-            )(input_tensor)
-            d_n = Conv1D(
-                kernel_initializer=keras.initializers.Constant(hpf.reshape((-1, 1))),
-                name="high_pass_{}".format(i),
-                **wv_kwargs,
-            )(input_tensor)
-            #print(a_n)
+            for j in range(self.channels):
+                if j == 0:
+                    a_n = Conv1D(
+                        kernel_initializer=keras.initializers.Constant(lpf.reshape((-1, 1))),
+                        name="low_pass_{}.{}".format(i,j),
+                        **wv_kwargs
+                    )(last_approximant[:,:,j,:])
+                    d_n = Conv1D(
+                        kernel_initializer=keras.initializers.Constant(hpf.reshape((-1, 1))),
+                        name="high_pass_{}.{}".format(i,j),
+                        **wv_kwargs,
+                    )(last_approximant[:,:,j,:])
+                else:
+                #print(a_n)
+                    temp_a = Conv1D(
+                        kernel_initializer=keras.initializers.Constant(lpf.reshape((-1, 1))),
+                        name="low_pass_{}.{}".format(i,j),
+                        **wv_kwargs
+                    )(last_approximant[:,:,j,:])
+                    a_n = K.concatenate([a_n,temp_a],axis=2)
+                    temp_d = Conv1D(
+                        kernel_initializer=keras.initializers.Constant(hpf.reshape((-1, 1))),
+                        name="high_pass_{}.{}".format(i,j),
+                        **wv_kwargs,
+                    )(last_approximant[:,:,j,:])
+                    d_n = K.concatenate([d_n,temp_d],axis=2)
             detail_coefficients.append(d_n)
             approximation_coefficients.append(a_n)
             last_approximant = a_n
+            last_approximant = K.reshape(last_approximant,(-1,last_approximant.shape[-2],last_approximant.shape[-1],1))
 
         return approximation_coefficients, detail_coefficients
     
@@ -252,92 +270,112 @@ class Discriminator():
         #envelope_reshaped = K.reshape(envelope,(-1,self.num_steps,self.moving_avg_window))
         envelope_mean = K.mean(envelope, axis=2, keepdims=True)
         #print(envelope_mean.shape)
-        envelope_mean = K.reshape(envelope_mean,(-1,self.num_steps,self.channels,1))
+        envelope_mean = K.reshape(envelope_mean,(-1,self.num_steps,self.channels))
         return envelope_mean
+    
+    def rfft_layer(self,data):
+        #data=Reshape((data.shape[1],data.shape[2],1))(data)
+        n = data.shape[2]
+        #print(data.shape)
+        for i in range(n):
+            if i == 0:
+                fft = K.abs(tf.signal.rfft(data[:,:,i]))
+                fft = K.reshape(fft,(-1,fft.shape[1],1))
+            else:
+                temp = K.abs(tf.signal.rfft(data[:,:,i]))
+                temp = K.reshape(temp,(-1,temp.shape[1],1))
+                fft = K.concatenate([fft,temp],axis=2)
+        #print(fft.shape)
+        return fft
     
     def build_critic(self):
 
         input_ = Input(shape=self.seq_shape)
-        input_r = Reshape((self.seq_shape[0],self.seq_shape[1],1))(input_)
+        input_r = Reshape((self.seq_shape[0]*self.seq_shape[1],1))(input_)
         
         flat = Flatten()(input_)
         
         #CNN on raw signal
-        cnn_1 = Conv2D(16, kernel_size=3, strides=1, padding="same", name='raw_conv_1')(input_r)        
+        cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='raw_conv_1')(input_)        
         cnn_1 = LeakyReLU(alpha=0.2)(cnn_1)
         cnn_1 = Dropout(self.dropout_rate)(cnn_1)
-        cnn_2 = Conv2D(32, kernel_size=3, strides=1, padding="same", name='raw_conv_2')(cnn_1)
+        cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='raw_conv_2')(cnn_1)
         cnn_2 = BatchNormalization(momentum=0.8)(cnn_2)
         cnn_2 = LeakyReLU(alpha=0.2)(cnn_2)
         cnn_2 = Dropout(self.dropout_rate)(cnn_2)
-        cnn_2 = MaxPooling2D(2)(cnn_2)
-        cnn_3 = Conv2D(64, kernel_size=3, strides=1, padding="same", name='raw_conv_3')(cnn_2)
+        #cnn_2 = MaxPooling2D(2)(cnn_2)
+        cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='raw_conv_3')(cnn_2)
         cnn_3 = BatchNormalization(momentum=0.8)(cnn_3)
         cnn_3 = LeakyReLU(alpha=0.2)(cnn_3)
         cnn_3 = Dropout(self.dropout_rate)(cnn_3)
-        cnn_3 = MaxPooling2D(2)(cnn_3)
-        cnn_4_out = Conv2D(32, kernel_size=3, strides=1, padding="same", name='raw_conv_4')(cnn_3)
+        #cnn_3 = MaxPooling2D(2)(cnn_3)
+        cnn_4_out = Conv1D(32, kernel_size=3, strides=2, padding="same", name='raw_conv_4')(cnn_3)
         cnn_4 = BatchNormalization(momentum=0.8)(cnn_4_out)
         cnn_4 = LeakyReLU(alpha=0.2)(cnn_4)
         cnn_4 = Dropout(self.dropout_rate)(cnn_4)
         cnn_4 = Flatten()(cnn_4)
         
         #CNN on FFT of raw signal
-        fft = Lambda(spectral.rfft)(input_r)
-        fft_abs = Lambda(K.abs)(fft)
+        fft = Lambda(self.rfft_layer,name='rfft')(input_)
+        #fft = Reshape((fft.shape[1]*fft.shape[2],1))(fft)
+        #fft_abs = Lambda(K.abs)(fft)
         #fft_abs = Reshape((fft_abs.shape[-1],1), name='fft_abs')(fft_abs)
-        fft_cnn_1 = Conv2D(16, kernel_size=3, strides=1, padding="same", name='fft_conv_1')(fft_abs)
+        #fft_abs = Reshape((fft.shape[-2],fft.shape[-1],1), name='fft_abs')(fft)
+        fft_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_conv_1')(fft)
         fft_cnn_1 = LeakyReLU(alpha=0.2)(fft_cnn_1)
         fft_cnn_1 = Dropout(self.dropout_rate)(fft_cnn_1)
-        fft_cnn_1 = MaxPooling2D(2)(fft_cnn_1)
-        fft_cnn_2 = Conv2D(32, kernel_size=3, strides=1, padding="same", name='fft_conv_2')(fft_cnn_1)
+        #fft_cnn_1 = MaxPooling2D(2)(fft_cnn_1)
+        fft_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_conv_2')(fft_cnn_1)
         fft_cnn_2 = BatchNormalization(momentum=0.8)(fft_cnn_2)
         fft_cnn_2 = LeakyReLU(alpha=0.2)(fft_cnn_2)
         fft_cnn_2 = Dropout(self.dropout_rate)(fft_cnn_2)
-        fft_cnn_2 = MaxPooling2D(2)(fft_cnn_2)
-        fft_cnn_3 = Conv2D(64, kernel_size=3, strides=1, padding="same", name='fft_conv_3')(fft_cnn_2)
+        #fft_cnn_2 = MaxPooling2D(2)(fft_cnn_2)
+        fft_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_conv_3')(fft_cnn_2)
         fft_cnn_3 = BatchNormalization(momentum=0.8)(fft_cnn_3)
         fft_cnn_3 = LeakyReLU(alpha=0.2)(fft_cnn_3)
         fft_cnn_3 = Dropout(self.dropout_rate)(fft_cnn_3)
-        fft_cnn_3 = MaxPooling2D(2)(fft_cnn_3)
-        fft_cnn_4_out = Conv2D(64, kernel_size=3, strides=1, padding="same", name='fft_conv_4')(fft_cnn_3)
+        #fft_cnn_3 = MaxPooling2D(2)(fft_cnn_3)
+        fft_cnn_4_out = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_conv_4')(fft_cnn_3)
         fft_cnn_4 = BatchNormalization(momentum=0.8)(fft_cnn_4_out)
         fft_cnn_4 = LeakyReLU(alpha=0.2)(fft_cnn_4)
         fft_cnn_4 = Dropout(self.dropout_rate)(fft_cnn_4)        
         fft_cnn_4 = Flatten()(fft_cnn_4)
                 
         #CNN on FFT of envelope
-        envelope_window = Lambda(self.envelopes, output_shape=(self.seq_shape[0],self.seq_shape[1],1), name='envelope')(input_r)
+        envelope_window = Lambda(self.envelopes, output_shape=(self.seq_shape[0],self.seq_shape[1]), name='envelope')(input_)
+        #print(envelope_window.shape)
         #envelope_window = Flatten()(envelope_window)
-        envelope_fft = Lambda(spectral.rfft)(envelope_window)
-        envelope_fft_abs = Lambda(K.abs)(envelope_fft)
+        envelope_fft = Lambda(self.rfft_layer,name='envelope_fft')(envelope_window)
+        #envelope_fft_abs = Lambda(K.abs)(envelope_fft)
         #envelope_fft_abs = Reshape((envelope_fft_abs.shape[-1],1))(envelope_fft_abs)
-        envelope_cnn_1 = Conv2D(16, kernel_size=3, strides=1, padding="same", name='fft_env_conv_1')(envelope_fft_abs)
+        #envelope_fft_abs = Reshape((envelope_fft.shape[-2],envelope_fft.shape[-1],1))(envelope_fft)
+        #envelope_fft =Reshape((envelope_fft.shape[1]*envelope_fft.shape[2],1))(envelope_fft)
+        envelope_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_env_conv_1')(envelope_fft)
         envelope_cnn_1 = LeakyReLU(alpha=0.2)(envelope_cnn_1)
         envelope_cnn_1 = Dropout(self.dropout_rate)(envelope_cnn_1)
-        envelope_cnn_1 = MaxPooling2D(2)(envelope_cnn_1)
-        envelope_cnn_2 = Conv2D(32, kernel_size=3, strides=1, padding="same", name='fft_env_conv_2')(envelope_cnn_1)
+        #envelope_cnn_1 = MaxPooling2D(2)(envelope_cnn_1)
+        envelope_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_env_conv_2')(envelope_cnn_1)
         envelope_cnn_2 = BatchNormalization(momentum=0.8)(envelope_cnn_2)
         envelope_cnn_2 = LeakyReLU(alpha=0.2)(envelope_cnn_2)
         envelope_cnn_2 = Dropout(self.dropout_rate)(envelope_cnn_2)
-        envelope_cnn_2 = MaxPooling2D(2)(envelope_cnn_2)
-        envelope_cnn_3 = Conv2D(64, kernel_size=3, strides=1, padding="same", name='fft_env_conv_3')(envelope_cnn_2)
+        #envelope_cnn_2 = MaxPooling2D(2)(envelope_cnn_2)
+        envelope_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_env_conv_3')(envelope_cnn_2)
         envelope_cnn_3 = BatchNormalization(momentum=0.8)(envelope_cnn_3)
         envelope_cnn_3 = LeakyReLU(alpha=0.2)(envelope_cnn_3)
         envelope_cnn_3 = Dropout(self.dropout_rate)(envelope_cnn_3)
-        envelope_cnn_3 = MaxPooling2D(2)(envelope_cnn_3)
-        envelope_cnn_4_out = Conv2D(64, kernel_size=3, strides=1, padding="same", name='fft_env_conv_4')(envelope_cnn_3)
+        #envelope_cnn_3 = MaxPooling2D(2)(envelope_cnn_3)
+        envelope_cnn_4_out = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_env_conv_4')(envelope_cnn_3)
         envelope_cnn_4 = BatchNormalization(momentum=0.8)(envelope_cnn_4_out)
         envelope_cnn_4 = LeakyReLU(alpha=0.2)(envelope_cnn_4)
         envelope_cnn_4 = Dropout(self.dropout_rate)(envelope_cnn_4)
         envelope_cnn_4 = Flatten()(envelope_cnn_4)
         
         # Wavelet Expansion
-        approx_stack, detail_stack = self.make_wavelet_expansion(flat)
+        approx_stack, detail_stack = self.make_wavelet_expansion(input_)
         features_list = []
         features_list.extend(detail_stack)
         features_list.append(approx_stack[-1])
-        wavelet_concatenate = Concatenate(axis=1)(features_list)
+        wavelet_concatenate = Concatenate(axis=1,name='wavelet_concat')(features_list)
         wavelet_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='wavelet_conv_1')(wavelet_concatenate)
         wavelet_cnn_1 = LeakyReLU(alpha=0.2)(wavelet_cnn_1)
         wavelet_cnn_1 = Dropout(self.dropout_rate)(wavelet_cnn_1)

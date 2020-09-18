@@ -58,6 +58,15 @@ def bandpass_filter(data,fn=350):
             x[i,:,j] = signal.filtfilt(b, a, data[i,:,j])
     return x
 
+def mean_smooth(data,neighbor=5):
+    [m,n,l]=data.shape
+    temp = np.zeros((m,n+neighbor*2,l))
+    temp[:,neighbor:-neighbor,:]=data
+    results = np.zeros((m,n,l))
+    for i in range(neighbor*2+1):
+        results += temp[:,i:n+i,:]
+    return results/(neighbor*2+1)
+
 def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_label=False):
     #sc = joblib.load('./model/scalar')
     #sc = MinMaxScaler()
@@ -70,7 +79,7 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
     X = []
     Y = []
     if scaler:
-        #sc = StandardScaler(with_mean = True)
+        sc = StandardScaler(with_mean = False)
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]

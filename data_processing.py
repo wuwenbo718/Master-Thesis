@@ -6,7 +6,7 @@ from nitime.algorithms.autoregressive import AR_est_YW
 import pywt
 from scipy import signal
 from scipy.integrate import cumtrapz
-from scipy.stats import zscore
+from scipy.stats import zscore,kurtosis
 import joblib
 import matplotlib.pyplot as plt
 
@@ -83,8 +83,8 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                #x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]),axis=0)
                 X += [x_sc]
                 #print(set(data.Label2[i*stride:i*stride+width]))
             else:
@@ -216,15 +216,52 @@ def compute_WL(data):
     return compute_IEMG(temp)
 
 def compute_ZC(data,threshold=0):
-    noise = 1e-2
-    data = data+noise
-    sign = ((data[:,1:,:])*(data[:,:-1,:]))<=-threshold
+    #noise = 1e-2
+    #data = data+noise
+    l = len(data)
+    sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
     sub = np.abs(data[:,1:,:]-data[:,:-1,:])>threshold
-    return compute_IEMG(sign & sub)
+    return np.sum(sign & sub,axis=1)/l
+
+def compute_ku(data):
+    return kurtosis(data,1)
+
+def compute_ZC_expand(data,threshold):
+    #noise = 1e-2
+    #data = data+noise
+    n,_,c=data.shape
+    m = len(threshold)
+    results = np.zeros((n,m,c))
+    sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
+    for i in range(m):
+        sub = np.sign(threshold[i]+1e-5)*(data[:,1:,:]-data[:,:-1,:])>np.abs(threshold[i])
+        results[:,i,:]=np.sum(sign & sub,axis=1)
+    return results
+
+def compute_ZC_expand_pd(data,threshold):
+
+    n,_,c=data.shape
+    m = len(threshold)
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for j in range(m):
+        columns_b += ['_ZC%d'%j]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    results = np.zeros((n,m,c))
+    sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
+    for i in range(m):
+        sub = np.sign(threshold[i]+1e-5)*(data[:,1:,:]-data[:,:-1,:])>np.abs(threshold[i])
+        results[:,i,:]=np.sum(sign & sub,axis=1)
+    return pd.DataFrame(results.reshape((-1,m*c)),columns=index)
 
 def compute_SSC(data,threshold=0):
-    temp = (data[:,1:-1,:]-data[:,:-2,:])*(data[:,1:-1,:]-data[:,2:,:])
-    return compute_IEMG(temp >= threshold)
+    sign = (data[:,1:-1,:]-data[:,:-2,:])*(data[:,2:,:]-data[:,1:-1,:])
+    ssc = (sign > 0) & (((data[:,1:-1,:]-data[:,:-2,:])>threshold) | ((data[:,1:-1,:]-data[:,2:,:])>threshold))
+    return np.sum(ssc,axis=1)
 
 def compute_WAMP(data,threshold = 0):
     temp = np.abs(data[:,1:,:]-data[:,:-1,:])>=threshold
@@ -458,7 +495,9 @@ def generate_feature_pd(data,threshold_WAMP=30,
     #VAR = pd.DataFrame(compute_VAR(data),columns=columns+'_VAR')
     #RMS = pd.DataFrame(compute_RMS(data),columns=columns+'_RMS')
     WL = pd.DataFrame(compute_WL(data),columns=columns+'_WL')
-    ZC = pd.DataFrame(compute_ZC(data,threshold_ZC),columns=columns+'_ZC')
+    #ZC = pd.DataFrame(compute_ZC(data,threshold_ZC),columns=columns+'_ZC')
+    ZC = compute_ZC_expand_pd(data,threshold_ZC)
+    ku = pd.DataFrame(compute_ku(data),columns=columns+'_ku')
     SSC = pd.DataFrame(compute_SSC(data,threshold_SSC),columns=columns+'_SSC')
     WAMP = pd.DataFrame(compute_WAMP(data,threshold_WAMP),columns=columns+'_WAMP')
     skew = pd.DataFrame(compute_Skewness(data),columns=columns+'_skew')
@@ -471,7 +510,7 @@ def generate_feature_pd(data,threshold_WAMP=30,
     MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
     MNF = pd.DataFrame(compute_MNF(data),columns=columns+'_MNF')
     mDWT = compute_mDWT_pd(data,wavelet,level)
-    feature = pd.concat([IEMG,SSI,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MF,MDF,MNF,mDWT],axis =1)
+    feature = pd.concat([IEMG,SSI,WL,ZC,ku,SSC,WAMP,skew,Acti,AR,HIST,MF,MDF,MNF,mDWT],axis =1)
     return feature
 
 def pipeline_feature(path,width = 256,
@@ -702,8 +741,8 @@ def pipeline_cwt(path,
         wn=2*fn/1000
         fn1 = 350
         wn1 = 2*fn1/1000
-        b, a = signal.butter(4, [wn,wn1], 'bandpass')
-        #b, a = signal.butter(4, wn, 'lowpass')
+        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
+        b, a = signal.butter(4, wn, 'lowpass')
         for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
             emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
             
@@ -792,3 +831,28 @@ def pipeline_cwt_feature(path,
     Data = Data.join(feature)
     Data['File']=path.split('/')[-1]
     return Data
+
+def get_features_from_dwt(data,wavelet='db7',level=5):
+    coes = pywt.wavedec(data,wavelet=wavelet,mode=0,level=level,axis=1)
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    feature = pd.DataFrame()
+    for i in range(len(coes)):
+        #IEMG = pd.DataFrame(compute_IEMG(coes[i]),columns=columns+'_IEMG')
+        RMS = pd.DataFrame(compute_RMS(coes[i]),columns=columns+'_RMS%d'%i)
+        #WL = pd.DataFrame(compute_WL(coes[i]),columns=columns+'_WL%d'%i)
+        ZC = pd.DataFrame(compute_ZC(coes[i],1e-3),columns=columns+'_ZC%d'%i)
+        ku = pd.DataFrame(compute_ku(coes[i]),columns=columns+'_ku%d'%i)
+        #SSC = pd.DataFrame(dp.compute_SSC(coes[i],threshold_SSC),columns=columns+'_SSC%d'%i)
+        WAMP = pd.DataFrame(compute_WAMP(coes[i],threshold_WAMP),columns=columns+'_WAMP%d'%i)
+        skew = pd.DataFrame(compute_Skewness(coes[i]),columns=columns+'_skew%d'%i)
+        Acti = pd.DataFrame(compute_Acti(coes[i]),columns=columns+'_Acti%d'%i)
+        AR = pd.DataFrame(compute_AR(coes[i]),columns=columns+'_AR%d'%i)
+        #AR = compute_AR_pd(coes[i])
+        #HIST = compute_HIST_pd(coes[i],bins=bins,ranges=ranges)
+        #FHIST = compute_FHIST_pd(coes[i],bins=fbins,ranges=franges,threshold=threshold_F)
+        #MF = compute_MaxFreq_pd(coes[i],num=num)
+        MDF = pd.DataFrame(dp.compute_MDF(coes[i]),columns=columns+'_MDF%d'%i)
+        MNF = pd.DataFrame(dp.compute_MNF(coes[i]),columns=columns+'_MNF%d'%i)
+        feature = pd.concat([feature,RMS,ZC,ku,WAMP,skew,Acti,AR,MDF,MNF],axis =1)
+    return feature

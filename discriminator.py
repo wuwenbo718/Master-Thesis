@@ -32,7 +32,7 @@ from tensorflow.keras.layers import Input, Dense, Flatten, Activation, Dropout, 
 from tensorflow.keras.layers import Add, Subtract, Multiply, ReLU, ThresholdedReLU, Concatenate, GlobalAveragePooling1D, GlobalMaxPooling1D, GlobalAvgPool1D
 from tensorflow.keras.layers import Bidirectional
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, UpSampling1D
-from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.layers import LeakyReLU, ELU, ReLU
 from tensorflow.keras.layers import UpSampling2D, Conv2D, MaxPooling2D
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras import backend as K
@@ -288,6 +288,39 @@ class Discriminator():
         #print(fft.shape)
         return fft
     
+    def compute_MAV(self,data):
+        N = data.shape[1]
+        return K.sum(K.abs(data),axis=1)/N
+
+    def compute_RMS(self,data):
+        N = data.shape[1]
+        return K.sqrt(K.sum(K.pow(data,2),axis=1)/N)
+
+    def compute_WL(self,data):
+        temp = data[:,1:,:]-data[:,:-1,:]
+        return K.sum(K.abs(temp),axis=1)
+
+    def compute_ZC(self,data,threshold=1e-6):
+        sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
+        sub = K.abs(data[:,1:,:]-data[:,:-1,:])>threshold
+        #return K.sum(sign & sub,axis=1)
+        return K.sum(K.cast(K.equal(sign,sub),dtype='float32'),axis=1)
+
+    def compute_SSC(self,data,threshold=1e-6):
+        sign = (data[:,1:-1,:]-data[:,:-2,:])*(data[:,2:,:]-data[:,1:-1,:])
+        ssc = (sign > 0) & (((data[:,1:-1,:]-data[:,:-2,:])>threshold) | ((data[:,1:-1,:]-data[:,2:,:])>threshold))
+        return K.sum(K.cast(ssc,dtype='float32'),axis=1)
+    
+    def feature_layer(self,data):
+        MAV = K.reshape(self.compute_MAV(data),(-1,1,self.channels))
+        RMS = K.reshape(self.compute_RMS(data),(-1,1,self.channels))
+        WL = K.reshape(self.compute_WL(data),(-1,1,self.channels))
+        ZC = K.reshape(self.compute_ZC(data),(-1,1,self.channels))
+        SSC = K.reshape(self.compute_SSC(data),(-1,1,self.channels))
+        print(SSC.shape)
+        feature = K.concatenate([MAV,RMS,WL,ZC,SSC],axis=1)
+        return feature
+    
     def build_critic(self):
 
         input_ = Input(shape=self.seq_shape)
@@ -297,23 +330,38 @@ class Discriminator():
         
         #CNN on raw signal
         cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='raw_conv_1')(input_)        
+        #cnn_1 = ReLU()(cnn_1)
         cnn_1 = LeakyReLU(alpha=0.2)(cnn_1)
         cnn_1 = Dropout(self.dropout_rate)(cnn_1)
+        
         cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='raw_conv_2')(cnn_1)
         cnn_2 = BatchNormalization(momentum=0.8)(cnn_2)
-        cnn_2 = LeakyReLU(alpha=0.2)(cnn_2)
+        cnn_2 = ReLU()(cnn_2)
+        #cnn_2 = LeakyReLU(alpha=0.2)(cnn_2)
         cnn_2 = Dropout(self.dropout_rate)(cnn_2)
         #cnn_2 = MaxPooling2D(2)(cnn_2)
+        
         cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='raw_conv_3')(cnn_2)
         cnn_3 = BatchNormalization(momentum=0.8)(cnn_3)
-        cnn_3 = LeakyReLU(alpha=0.2)(cnn_3)
+        cnn_3 = ReLU()(cnn_3)
+        #cnn_3 = LeakyReLU(alpha=0.2)(cnn_3)
         cnn_3 = Dropout(self.dropout_rate)(cnn_3)
         #cnn_3 = MaxPooling2D(2)(cnn_3)
+        
         cnn_4_out = Conv1D(32, kernel_size=3, strides=2, padding="same", name='raw_conv_4')(cnn_3)
         cnn_4 = BatchNormalization(momentum=0.8)(cnn_4_out)
-        cnn_4 = LeakyReLU(alpha=0.2)(cnn_4)
+        cnn_4 = ReLU()(cnn_4)
+        #cnn_4 = LeakyReLU(alpha=0.2)(cnn_4)
         cnn_4 = Dropout(self.dropout_rate)(cnn_4)
-        cnn_4 = Flatten()(cnn_4)
+        
+        cnn_5 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='raw_conv_5')(cnn_4)
+        cnn_5 = BatchNormalization(momentum=0.8)(cnn_5)
+        cnn_5 = ReLU()(cnn_5)
+        #cnn_5 = LeakyReLU(alpha=0.2)(cnn_5)
+        cnn_5 = Dropout(self.dropout_rate)(cnn_5)
+        #cnn_3 = MaxPooling2D(2)(cnn_3)
+        
+        cnn_5 = Flatten()(cnn_5)
         
         #CNN on FFT of raw signal
         fft = Lambda(self.rfft_layer,name='rfft')(input_)
@@ -322,24 +370,39 @@ class Discriminator():
         #fft_abs = Reshape((fft_abs.shape[-1],1), name='fft_abs')(fft_abs)
         #fft_abs = Reshape((fft.shape[-2],fft.shape[-1],1), name='fft_abs')(fft)
         fft_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_conv_1')(fft)
-        fft_cnn_1 = LeakyReLU(alpha=0.2)(fft_cnn_1)
+        fft_cnn_1 = ReLU()(fft_cnn_1)
+        #fft_cnn_1 = LeakyReLU(alpha=0.2)(fft_cnn_1)
         fft_cnn_1 = Dropout(self.dropout_rate)(fft_cnn_1)
         #fft_cnn_1 = MaxPooling2D(2)(fft_cnn_1)
+        
         fft_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_conv_2')(fft_cnn_1)
         fft_cnn_2 = BatchNormalization(momentum=0.8)(fft_cnn_2)
-        fft_cnn_2 = LeakyReLU(alpha=0.2)(fft_cnn_2)
+        fft_cnn_2 = ReLU()(fft_cnn_2)
+        #fft_cnn_2 = LeakyReLU(alpha=0.2)(fft_cnn_2)
         fft_cnn_2 = Dropout(self.dropout_rate)(fft_cnn_2)
         #fft_cnn_2 = MaxPooling2D(2)(fft_cnn_2)
+        
         fft_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_conv_3')(fft_cnn_2)
         fft_cnn_3 = BatchNormalization(momentum=0.8)(fft_cnn_3)
-        fft_cnn_3 = LeakyReLU(alpha=0.2)(fft_cnn_3)
+        fft_cnn_3 = ReLU()(fft_cnn_3)
+        #fft_cnn_3 = LeakyReLU(alpha=0.2)(fft_cnn_3)
         fft_cnn_3 = Dropout(self.dropout_rate)(fft_cnn_3)
         #fft_cnn_3 = MaxPooling2D(2)(fft_cnn_3)
-        fft_cnn_4_out = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_conv_4')(fft_cnn_3)
+        
+        fft_cnn_4_out = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_conv_4')(fft_cnn_3)
         fft_cnn_4 = BatchNormalization(momentum=0.8)(fft_cnn_4_out)
-        fft_cnn_4 = LeakyReLU(alpha=0.2)(fft_cnn_4)
-        fft_cnn_4 = Dropout(self.dropout_rate)(fft_cnn_4)        
-        fft_cnn_4 = Flatten()(fft_cnn_4)
+        fft_cnn_4 = ReLU()(fft_cnn_4)
+        #fft_cnn_4 = LeakyReLU(alpha=0.2)(fft_cnn_4)
+        fft_cnn_4 = Dropout(self.dropout_rate)(fft_cnn_4)   
+        
+        fft_cnn_5 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_conv_5')(fft_cnn_4)
+        fft_cnn_5 = BatchNormalization(momentum=0.8)(fft_cnn_5)
+        fft_cnn_5 = ReLU()(fft_cnn_5)
+        #fft_cnn_5 = LeakyReLU(alpha=0.2)(fft_cnn_5)
+        fft_cnn_5 = Dropout(self.dropout_rate)(fft_cnn_5)
+        #fft_cnn_3 = MaxPooling2D(2)(fft_cnn_3)
+        
+        fft_cnn_5 = Flatten()(fft_cnn_5)
                 
         #CNN on FFT of envelope
         envelope_window = Lambda(self.envelopes, output_shape=(self.seq_shape[0],self.seq_shape[1]), name='envelope')(input_)
@@ -350,25 +413,41 @@ class Discriminator():
         #envelope_fft_abs = Reshape((envelope_fft_abs.shape[-1],1))(envelope_fft_abs)
         #envelope_fft_abs = Reshape((envelope_fft.shape[-2],envelope_fft.shape[-1],1))(envelope_fft)
         #envelope_fft =Reshape((envelope_fft.shape[1]*envelope_fft.shape[2],1))(envelope_fft)
+        
         envelope_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_env_conv_1')(envelope_fft)
-        envelope_cnn_1 = LeakyReLU(alpha=0.2)(envelope_cnn_1)
+        envelope_cnn_1 = ReLU()(envelope_cnn_1)
+        #envelope_cnn_1 = LeakyReLU(alpha=0.2)(envelope_cnn_1)
         envelope_cnn_1 = Dropout(self.dropout_rate)(envelope_cnn_1)
         #envelope_cnn_1 = MaxPooling2D(2)(envelope_cnn_1)
+        
         envelope_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_env_conv_2')(envelope_cnn_1)
         envelope_cnn_2 = BatchNormalization(momentum=0.8)(envelope_cnn_2)
-        envelope_cnn_2 = LeakyReLU(alpha=0.2)(envelope_cnn_2)
+        envelope_cnn_2 = ReLU()(envelope_cnn_2)
+        #envelope_cnn_2 = LeakyReLU(alpha=0.2)(envelope_cnn_2)
         envelope_cnn_2 = Dropout(self.dropout_rate)(envelope_cnn_2)
         #envelope_cnn_2 = MaxPooling2D(2)(envelope_cnn_2)
+        
         envelope_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_env_conv_3')(envelope_cnn_2)
         envelope_cnn_3 = BatchNormalization(momentum=0.8)(envelope_cnn_3)
-        envelope_cnn_3 = LeakyReLU(alpha=0.2)(envelope_cnn_3)
+        envelope_cnn_3 = ReLU()(envelope_cnn_3)
+        #envelope_cnn_3 = LeakyReLU(alpha=0.2)(envelope_cnn_3)
         envelope_cnn_3 = Dropout(self.dropout_rate)(envelope_cnn_3)
         #envelope_cnn_3 = MaxPooling2D(2)(envelope_cnn_3)
-        envelope_cnn_4_out = Conv1D(64, kernel_size=3, strides=2, padding="same", name='fft_env_conv_4')(envelope_cnn_3)
+        
+        envelope_cnn_4_out = Conv1D(32, kernel_size=3, strides=2, padding="same", name='fft_env_conv_4')(envelope_cnn_3)
         envelope_cnn_4 = BatchNormalization(momentum=0.8)(envelope_cnn_4_out)
-        envelope_cnn_4 = LeakyReLU(alpha=0.2)(envelope_cnn_4)
+        envelope_cnn_4 = ReLU()(envelope_cnn_4)
+        #envelope_cnn_4 = LeakyReLU(alpha=0.2)(envelope_cnn_4)
         envelope_cnn_4 = Dropout(self.dropout_rate)(envelope_cnn_4)
-        envelope_cnn_4 = Flatten()(envelope_cnn_4)
+        
+        envelope_cnn_5 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='fft_env_conv_5')(envelope_cnn_4)
+        envelope_cnn_5 = BatchNormalization(momentum=0.8)(envelope_cnn_5)
+        envelope_cnn_5 = ReLU()(envelope_cnn_5)
+        #envelope_cnn_5 = LeakyReLU(alpha=0.2)(envelope_cnn_5)
+        envelope_cnn_5 = Dropout(self.dropout_rate)(envelope_cnn_5)
+        #envelope_cnn_3 = MaxPooling2D(2)(envelope_cnn_3)
+        
+        envelope_cnn_5 = Flatten()(envelope_cnn_5)
         
         # Wavelet Expansion
         approx_stack, detail_stack = self.make_wavelet_expansion(input_)
@@ -376,22 +455,60 @@ class Discriminator():
         features_list.extend(detail_stack)
         features_list.append(approx_stack[-1])
         wavelet_concatenate = Concatenate(axis=1,name='wavelet_concat')(features_list)
+        
         wavelet_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='wavelet_conv_1')(wavelet_concatenate)
-        wavelet_cnn_1 = LeakyReLU(alpha=0.2)(wavelet_cnn_1)
+        wavelet_cnn_1 = ReLU()(wavelet_cnn_1)
+        #wavelet_cnn_1 = LeakyReLU(alpha=0.2)(wavelet_cnn_1)
         wavelet_cnn_1 = Dropout(self.dropout_rate)(wavelet_cnn_1)
+        
         wavelet_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='wavelet_conv_2')(wavelet_cnn_1)
         wavelet_cnn_2 = BatchNormalization(momentum=0.8)(wavelet_cnn_2)
-        wavelet_cnn_2 = LeakyReLU(alpha=0.2)(wavelet_cnn_2)
+        wavelet_cnn_2 = ReLU()(wavelet_cnn_2)
+        #wavelet_cnn_2 = LeakyReLU(alpha=0.2)(wavelet_cnn_2)
         wavelet_cnn_2 = Dropout(self.dropout_rate)(wavelet_cnn_2)
+        
         wavelet_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='wavelet_conv_3')(wavelet_cnn_2)
         wavelet_cnn_3 = BatchNormalization(momentum=0.8)(wavelet_cnn_3)
-        wavelet_cnn_3 = LeakyReLU(alpha=0.2)(wavelet_cnn_3)
+        wavelet_cnn_3 = ReLU()(wavelet_cnn_3)
+        #wavelet_cnn_3 = LeakyReLU(alpha=0.2)(wavelet_cnn_3)
         wavelet_cnn_3 = Dropout(self.dropout_rate)(wavelet_cnn_3)
+        
         wavelet_cnn_4_out = Conv1D(32, kernel_size=3, strides=2, padding="same", name='wavelet_conv_4')(wavelet_cnn_3)
         wavelet_cnn_4 = BatchNormalization(momentum=0.8)(wavelet_cnn_4_out)
-        wavelet_cnn_4 = LeakyReLU(alpha=0.2)(wavelet_cnn_4)
+        wavelet_cnn_4 = ReLU()(wavelet_cnn_4)
+        #wavelet_cnn_4 = LeakyReLU(alpha=0.2)(wavelet_cnn_4)
         wavelet_cnn_4 = Dropout(self.dropout_rate)(wavelet_cnn_4)
-        wavelet_cnn_4 = Flatten()(wavelet_cnn_4)
+        
+        wavelet_cnn_5 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='wavelet_conv_5')(wavelet_cnn_4)
+        wavelet_cnn_5 = BatchNormalization(momentum=0.8)(wavelet_cnn_5)
+        wavelet_cnn_5 = ReLU()(wavelet_cnn_5)
+        #wavelet_cnn_5 = LeakyReLU(alpha=0.2)(wavelet_cnn_5)
+        wavelet_cnn_5 = Dropout(self.dropout_rate)(wavelet_cnn_5)
+        
+        wavelet_cnn_5 = Flatten()(wavelet_cnn_5)
+        
+        #feature
+        feature = Lambda(self.feature_layer,name='feature_layer')(input_)
+        print(feature.shape)
+        feature_cnn_1 = Conv1D(16, kernel_size=3, strides=2, padding="same", name='feature_conv_1')(feature)
+        feature_cnn_1 = ReLU()(feature_cnn_1)
+        #feature_cnn_1 = LeakyReLU(alpha=0.2)(wavelet_cnn_1)
+        feature_cnn_1 = Dropout(self.dropout_rate)(feature_cnn_1)
+        
+        feature_cnn_2 = Conv1D(32, kernel_size=3, strides=2, padding="same", name='feature_conv_2')(feature_cnn_1)
+        feature_cnn_2 = BatchNormalization(momentum=0.8)(feature_cnn_2)
+        feature_cnn_2 = ReLU()(feature_cnn_2)
+        #feature_cnn_2 = LeakyReLU(alpha=0.2)(wavelet_cnn_2)
+        feature_cnn_2 = Dropout(self.dropout_rate)(feature_cnn_2)
+        
+        feature_cnn_3 = Conv1D(64, kernel_size=3, strides=2, padding="same", name='feature_conv_3')(feature_cnn_2)
+        feature_cnn_3 = BatchNormalization(momentum=0.8)(feature_cnn_3)
+        feature_cnn_3 = ReLU()(wavelet_cnn_3)
+        #feature_cnn_3 = LeakyReLU(alpha=0.2)(wavelet_cnn_3)
+        feature_cnn_3 = Dropout(self.dropout_rate)(feature_cnn_3)
+        
+        feature_cnn_3 = Flatten()(feature_cnn_3)
+        
         
         # Mini batch discrimination
         mini_disc = MinibatchDiscrimination(10,3)(flat)
@@ -399,7 +516,7 @@ class Discriminator():
         if self.use_mini_batch:
             concatenate = Concatenate()([cnn_4,fft_cnn_4,envelope_cnn_4,wavelet_cnn_4,mini_disc])
         else:
-            concatenate = Concatenate()([cnn_4,fft_cnn_4,envelope_cnn_4,wavelet_cnn_4])
+            concatenate = Concatenate()([cnn_5,fft_cnn_5,envelope_cnn_5,wavelet_cnn_5])
         #print(wavelet_cnn_4.shape)
         #dense1 = Dense(526,activation='relu',name='dense1')(concatenate)
         #dense1 = Dropout(self.dropout_rate)(dense1)

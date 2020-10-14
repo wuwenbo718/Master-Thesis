@@ -516,7 +516,7 @@ class Discriminator():
         if self.use_mini_batch:
             concatenate = Concatenate()([cnn_4,fft_cnn_4,envelope_cnn_4,wavelet_cnn_4,mini_disc])
         else:
-            concatenate = Concatenate()([cnn_5,fft_cnn_5,envelope_cnn_5,wavelet_cnn_5])
+            concatenate = Concatenate()([cnn_5,fft_cnn_5,envelope_cnn_5])
         #print(wavelet_cnn_4.shape)
         #dense1 = Dense(526,activation='relu',name='dense1')(concatenate)
         #dense1 = Dropout(self.dropout_rate)(dense1)

@@ -1,5 +1,6 @@
 from sklearn.preprocessing import StandardScaler,normalize,MinMaxScaler
 from scipy.stats import skew
+from scipy.sparse import spdiags
 import numpy as np
 import pandas as pd
 from nitime.algorithms.autoregressive import AR_est_YW
@@ -32,6 +33,45 @@ def scale_data(data,sc,cwt=True):
         X = sc.fit_transform(X)
         data.iloc[:,3:] = X
         return data
+    
+def detrend(signal, Lambda, return_trend=False):
+    """detrend(signal, Lambda) -> filtered_signal
+  
+    This function applies a detrending filter.
+   
+    This code is based on the following article "An advanced detrending method with application
+    to HRV analysis". Tarvainen et al., IEEE Trans on Biomedical Engineering, 2002.
+  
+    **Parameters**
+
+    ``signal`` (1d numpy array):
+    The signal where you want to remove the trend.
+
+    ``Lambda`` (int):
+    The smoothing parameter.
+
+    **Returns**
+  
+    ``filtered_signal`` (1d numpy array):
+    The detrended signal.
+    """
+    signal_length = signal.shape[0]
+
+    # observation matrix
+    H = np.identity(signal_length) 
+
+    # second-order difference matrix
+    ones = np.ones(signal_length)
+    minus_twos = -2*np.ones(signal_length)
+    diags_data = np.array([ones, minus_twos, ones])
+    diags_index = np.array([0, 1, 2])
+    D = spdiags(diags_data, diags_index, (signal_length-2), signal_length).toarray()
+    filtered_signal = (H - np.linalg.inv(H + (Lambda**2) * D.T@D))@signal
+    if return_trend:
+        trend = (np.linalg.inv(H + (Lambda**2) * D.T@D))@signal
+        return filtered_signal,trend
+    else:
+        return filtered_signal
 
 def lowpass_filter(data):
     x = np.zeros(data.shape)
@@ -79,7 +119,7 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
     X = []
     Y = []
     if scaler:
-        sc = StandardScaler(with_mean = False)
+        sc = StandardScaler(with_mean = True)
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
@@ -95,6 +135,126 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
                 Y += [data.Label2[i*stride]]
                 #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
                 X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
+                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
+            else:
+                continue
+    
+    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
+
+def generate_window_slide_data_mix(data,width = 256,stride = 64,scaler=False,same_label=False,mix=0.8):
+    #sc = joblib.load('./model/scalar')
+    #sc = MinMaxScaler()
+    if same_label:
+        ind = (data.Label1 == data.Label2)
+        data = data.loc[ind,:].reset_index(drop=True)
+        
+    l = len(data)
+    end = (l-width)//stride+1
+    X = []
+    Y = []
+    if scaler:
+        sc = StandardScaler(with_mean = False)
+        for i in range(end):
+            temp = data.Label2[i*stride:i*stride+width].value_counts()
+            label_num = temp.max()
+            if label_num/width>mix:
+                Y += [temp.index[temp.argmax()]]
+                x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
+                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]),axis=0)
+                X += [x_sc]
+                #print(set(data.Label2[i*stride:i*stride+width]))
+            else:
+                continue
+    else:
+        for i in range(end):
+            temp = data.Label2[i*stride:i*stride+width].value_counts()
+            label_num = temp.max()
+            if label_num/width>mix:
+                Y += [temp.index[temp.argmax()]]
+                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
+                X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
+                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
+            else:
+                continue
+    
+    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
+
+def generate_window_slide_data_NA_remove(data,width = 256,stride = 64,scaler=False,same_label=False):
+    #sc = joblib.load('./model/scalar')
+    #sc = MinMaxScaler()
+    if same_label:
+        ind = (data.Label1 == data.Label2)
+        data = data.loc[ind,:].reset_index(drop=True)
+        
+    l = len(data)
+    end = (l-width)//stride+1
+    X = []
+    Y = []
+    if scaler:
+        sc = StandardScaler(with_mean = False)
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                if np.isnan(np.min(temp)):
+                    continue
+                Y += [data.Label2[i*stride]]
+                #x_sc = sc.fit_transform(temp)
+                x_sc = normalize(temp,axis=0)
+                X += [x_sc]
+                #print(set(data.Label2[i*stride:i*stride+width]))
+            else:
+                continue
+    else:
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                if np.isnan(np.min(temp)):
+                    continue
+                Y += [data.Label2[i*stride]]
+                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
+                X += [temp]
+                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
+            else:
+                continue
+    
+    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
+
+def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler=False,same_label=False):
+    #sc = joblib.load('./model/scalar')
+    #sc = MinMaxScaler()
+    if same_label:
+        ind = (data.Label1 == data.Label2)
+        data = data.loc[ind,:].reset_index(drop=True)
+        
+    l = len(data)
+    end = (l-width)//stride+1
+    X = []
+    Y = []
+    if scaler:
+        sc = StandardScaler(with_mean = True)
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                time = np.array(data.iloc[i*stride:i*stride+width,0])
+                if (np.round(time[1:]-time[:-1],3)>0.001).any():
+                    continue
+                Y += [data.Label2[i*stride]]
+                x_sc = sc.fit_transform(temp)
+                #x_sc = normalize(temp,axis=0)
+                X += [x_sc]
+                #print(set(data.Label2[i*stride:i*stride+width]))
+            else:
+                continue
+    else:
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                time = np.array(data.iloc[i*stride:i*stride+width,0])
+                if (np.round(time[1:]-time[:-1],3)>0.001).any():
+                    continue
+                Y += [data.Label2[i*stride]]
+                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
+                X += [temp]
                 #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
                 continue
@@ -495,8 +655,8 @@ def generate_feature_pd(data,threshold_WAMP=30,
     #VAR = pd.DataFrame(compute_VAR(data),columns=columns+'_VAR')
     #RMS = pd.DataFrame(compute_RMS(data),columns=columns+'_RMS')
     WL = pd.DataFrame(compute_WL(data),columns=columns+'_WL')
-    #ZC = pd.DataFrame(compute_ZC(data,threshold_ZC),columns=columns+'_ZC')
-    ZC = compute_ZC_expand_pd(data,threshold_ZC)
+    ZC = pd.DataFrame(compute_ZC(data,threshold_ZC),columns=columns+'_ZC')
+    #ZC = compute_ZC_expand_pd(data,threshold_ZC)
     ku = pd.DataFrame(compute_ku(data),columns=columns+'_ku')
     SSC = pd.DataFrame(compute_SSC(data,threshold_SSC),columns=columns+'_SSC')
     WAMP = pd.DataFrame(compute_WAMP(data,threshold_WAMP),columns=columns+'_WAMP')

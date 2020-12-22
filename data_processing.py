@@ -72,6 +72,47 @@ def detrend(signal, Lambda, return_trend=False):
         return filtered_signal,trend
     else:
         return filtered_signal
+    
+def rectify_emg(emg, low_pass=10, sfreq=1000, high_band=20, low_band=450):
+    """
+    emg: EMG data
+    high: high-pass cut off frequency
+    sfreq: sampling frequency
+    """
+    
+    # normalise cut-off frequencies to sampling frequency
+    high_band = high_band/(sfreq/2)
+    low_band = low_band/(sfreq/2)
+    
+    # create bandpass filter for EMG
+#     b1, a1 = signal.butter(4, [high_band,low_band], btype='bandpass')
+    b1, a1 = signal.butter(4, [low_band], btype='lowpass')
+    
+    # process EMG signal: filter EMG
+    emg_filtered = signal.filtfilt(b1, a1, emg)    
+    
+    # process EMG signal: rectify
+    emg_rectified = abs(emg_filtered)
+    
+    # create lowpass filter and apply to rectified signal to get EMG envelope
+    low_pass = low_pass/(sfreq/2)
+    b2, a2 = signal.butter(4, low_pass, btype='lowpass')
+    emg_envelope = signal.filtfilt(b2, a2, emg_rectified)
+    return emg_envelope
+
+def rectify_emg_moving_average(emg, neighbor=10):
+    """
+    emg: EMG data
+    neighbor: the number of current point's neighbor for averaging
+    sfreq: sampling frequency
+    """
+    
+    # process EMG signal: rectify
+    emg_rectified = abs(emg)
+    
+    # apply to rectified signal to get EMG envelope
+    emg_envelope = mean_smooth(emg_rectified,neighbor)
+    return emg_envelope
 
 def lowpass_filter(data):
     x = np.zeros(data.shape)
@@ -99,6 +140,9 @@ def bandpass_filter(data,fn=350):
     return x
 
 def mean_smooth(data,neighbor=5):
+    if data.shape[0] == 0:
+        print('empty dataset.')
+        return np.array([])
     [m,n,l]=data.shape
     temp = np.zeros((m,n+neighbor*2,l))
     temp[:,neighbor:-neighbor,:]=data
@@ -209,6 +253,70 @@ def generate_window_slide_data_NA_remove(data,width = 256,stride = 64,scaler=Fal
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 temp = np.array(data.iloc[i*stride:i*stride+width,3:])
                 if np.isnan(np.min(temp)):
+                    continue
+                Y += [data.Label2[i*stride]]
+                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
+                X += [temp]
+                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
+            else:
+                continue
+    
+    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
+
+def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 64,scaler=False,same_label=False):
+    ##sc = joblib.load('./model/scalar')
+    sc = StandardScaler(with_mean = True)
+    #sc = MinMaxScaler((-1,1))
+    if same_label:
+        ind = (data.Label1 == data.Label2)
+        data = data.loc[ind,:].reset_index(drop=True)
+        
+    l = len(data)
+    end = (l-width)//stride+1
+    X = []
+    Y = []
+    if scaler:
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                time = np.array(data.iloc[i*stride:i*stride+width,0])
+                if (np.round(time[1:]-time[:-1],3)>0.001).any():
+                    continue
+                skip = False
+                for j in range(temp.shape[-1]):
+                    freqs, power=signal.periodogram(temp[:,j], 1e3)
+                    ind_l = freqs<20
+                    max_l = np.max(power[ind_l])
+                    max_h = np.max(power[~ind_l])
+                    if (max_l>10*max_h) | (max_h<0.5):
+                        skip = True
+                        break
+                if skip:
+                    continue
+                Y += [data.Label2[i*stride]]
+                x_sc = sc.fit_transform(temp)
+                #x_sc = normalize(temp,axis=0)
+                X += [x_sc]
+                #print(set(data.Label2[i*stride:i*stride+width]))
+            else:
+                continue
+    else:
+        for i in range(end):
+            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
+                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
+                time = np.array(data.iloc[i*stride:i*stride+width,0])
+                if (np.round(time[1:]-time[:-1],3)>0.001).any():
+                    continue
+                skip = False
+                for j in range(temp.shape[-1]):
+                    freqs, power=signal.periodogram(temp[:,j], 1e3)
+                    ind_l = freqs<20
+                    max_l = np.max(power[ind_l])
+                    max_h = np.max(power[~ind_l])
+                    if (max_l>10*max_h) | (max_h<0.5):
+                        skip = True
+                        break
+                if skip:
                     continue
                 Y += [data.Label2[i*stride]]
                 #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
@@ -435,6 +543,25 @@ def compute_Acti(data):
     mean = np.mean(data,axis=1)
     return np.sum((data-mean[:,np.newaxis,:])**2,axis=1)/N
 
+def compute_Mobi(data):
+    N,L,C = data.shape
+    feature = np.zeros((N,C))
+    for i in range(N):
+        for j in range(C):
+            temp = np.gradient(data[i,:,j],np.arange(0,L/1000,1e-3))
+            feature[i,j] = np.sum((temp-temp.mean())**2)/N
+    acti = compute_Acti(data)
+    feature = np.sqrt(feature/acti)
+    return feature
+
+def compute_complexity(data):
+    N,L,C = data.shape
+    xd = np.zeros((N,L,C))
+    for i in range(N):
+        for j in range(C):
+            xd[i,:,j] = np.gradient(data[i,:,j],np.arange(0,L/1000,1e-3))
+    return compute_Mobi(xd)/compute_Mobi(data)
+
 def compute_AR(data,p=4):
     N = len(data)
     M = data.shape[-1]
@@ -444,6 +571,72 @@ def compute_AR(data,p=4):
             ak,_ = AR_est_YW(data[i,:,j],p)
             feature[i,j] = ak[0]
     return feature
+
+def compute_cc(ak,p=4):
+    '''
+        Compute  Cepstral Coefficient with Autoregression Coefficient for compute_CC
+        inputs:  Autoregression Coefficient
+        outputs: Cepstral Coefficient
+    '''
+    cc = np.zeros(p)
+    for i in np.arange(p):
+        temp = -ak[i]
+        for j in range(i):
+            temp -= (1-(j+1)/(i+1))*ak[j]*cc[i-j-1]
+        cc[i]=temp
+    return cc
+
+def compute_CC(data,p=4):
+    
+    '''
+        Compute Cepstral Coefficient of data matrix
+        inputs: data [N,L,C]
+        N: number of data
+        L: length of signal
+        C: number of channels 
+        outputs: Cepstral Coefficient
+    '''
+    
+    N = len(data)
+    C = data.shape[-1]
+    feature = np.zeros((N,p,C))
+    
+    for i in range(N):
+        for j in range(C):
+            ak,_ = AR_est_YW(data[i,:,j],p)
+            feature[i,:,j] = compute_cc(ak,p)
+    return feature
+
+def compute_CC_pd(data,p=4):
+    
+    '''
+        Compute Cepstral Coefficient of data matrix
+        inputs: data [N,L,C]
+        N: number of data
+        L: length of signal
+        C: number of channels 
+        outputs: Cepstral Coefficient
+    '''
+    
+    N = len(data)
+    C = data.shape[-1]
+    feature = np.zeros((N,p*C))
+    
+    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
+       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
+    columns_b = []
+    index = []
+    for m in range(p):
+        columns_b += ['_CC%d'%m]
+    columns_b = pd.Index(columns_b)
+    for col in columns:
+        index += (col+columns_b).to_list()
+    
+    for i in range(N):
+        for j in range(C):
+            ak,_ = AR_est_YW(data[i,:,j],p)
+            feature[i,j*p:(j+1)*p] = compute_cc(ak,p)
+    return pd.DataFrame(feature,columns=index)
 
 def compute_AR_pd(data,p=4):
     N = len(data)
@@ -624,12 +817,15 @@ def generate_feature(data,threshold_WAMP=30,
     WAMP = compute_WAMP(data,threshold_WAMP)
     skew = compute_Skewness(data)
     Acti = compute_Acti(data)
+    Mobi = compute_Mobi(data)
+    Comp = compute_complexity(data)
     AR = compute_AR(data)
+    CC = compute_CC(data)
     HIST = compute_HIST(data,bins=bins,ranges=ranges)
     MDF = compute_MDF(data)
     MNF = compute_MNF(data)
     mDWT = compute_mDWT(data)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT],axis =1)
+    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,Mobi,Comp,AR,CC,HIST,MDF,MNF,mDWT],axis =1)
     if show_para:
         print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
           %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
@@ -662,15 +858,18 @@ def generate_feature_pd(data,threshold_WAMP=30,
     WAMP = pd.DataFrame(compute_WAMP(data,threshold_WAMP),columns=columns+'_WAMP')
     skew = pd.DataFrame(compute_Skewness(data),columns=columns+'_skew')
     Acti = pd.DataFrame(compute_Acti(data),columns=columns+'_Acti')
+    Mobi = pd.DataFrame(compute_Mobi(data),columns=columns+'_Mobi')
+    Comp = pd.DataFrame(compute_complexity(data),columns=columns+'_Comp')
     AR = pd.DataFrame(compute_AR(data),columns=columns+'_AR')
     #AR = compute_AR_pd(data)
+    CC = compute_CC_pd(data)
     HIST = compute_HIST_pd(data,bins=bins,ranges=ranges)
     #FHIST = compute_FHIST_pd(data,bins=fbins,ranges=franges,threshold=threshold_F)
     MF = compute_MaxFreq_pd(data,num=num)
     MDF = pd.DataFrame(compute_MDF(data),columns=columns+'_MDF')
     MNF = pd.DataFrame(compute_MNF(data),columns=columns+'_MNF')
     mDWT = compute_mDWT_pd(data,wavelet,level)
-    feature = pd.concat([IEMG,SSI,WL,ZC,ku,SSC,WAMP,skew,Acti,AR,HIST,MF,MDF,MNF,mDWT],axis =1)
+    feature = pd.concat([IEMG,SSI,WL,ZC,ku,SSC,WAMP,skew,Acti,Mobi,Comp,AR,CC,HIST,MF,MDF,MNF,mDWT],axis =1)
     return feature
 
 def pipeline_feature(path,width = 256,

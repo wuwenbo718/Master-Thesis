@@ -42,21 +42,19 @@ def detrend(signal, Lambda, return_trend=False):
     This code is based on the following article "An advanced detrending method with application
     to HRV analysis". Tarvainen et al., IEEE Trans on Biomedical Engineering, 2002.
   
-    **Parameters**
+    Inputs:
 
-    ``signal`` (1d numpy array):
-    The signal where you want to remove the trend.
+    signal: The signal which you want to remove the trend.
 
-    ``Lambda`` (int):
-    The smoothing parameter.
+    Lambda (int): The smoothing parameter.
 
-    **Returns**
+    Outputs:
   
-    ``filtered_signal`` (1d numpy array):
-    The detrended signal.
+    filtered_signal: The detrended signal.
+    trend: The trend of original signal.
     """
-    signal_length = signal.shape[0]
-
+    signal_length = signal.shape[1]
+    
     # observation matrix
     H = np.identity(signal_length) 
 
@@ -73,19 +71,26 @@ def detrend(signal, Lambda, return_trend=False):
     else:
         return filtered_signal
     
+
+    
 def rectify_emg(emg, low_pass=10, sfreq=1000, high_band=20, low_band=450):
     """
+    Compute envelope of EMG signal with lowpass filters
+    
+    Inputs:
     emg: EMG data
     high: high-pass cut off frequency
     sfreq: sampling frequency
+    
+    Outputs:
+    emg_envelope: envelope of EMG signal
+    
     """
     
     # normalise cut-off frequencies to sampling frequency
-    high_band = high_band/(sfreq/2)
     low_band = low_band/(sfreq/2)
     
-    # create bandpass filter for EMG
-#     b1, a1 = signal.butter(4, [high_band,low_band], btype='bandpass')
+    # create lowpass filter for EMG
     b1, a1 = signal.butter(4, [low_band], btype='lowpass')
     
     # process EMG signal: filter EMG
@@ -102,9 +107,14 @@ def rectify_emg(emg, low_pass=10, sfreq=1000, high_band=20, low_band=450):
 
 def rectify_emg_moving_average(emg, neighbor=10):
     """
+    Compute the envelope of EMG signal with averaging methode.
+    
+    Inputs:
     emg: EMG data
     neighbor: the number of current point's neighbor for averaging
-    sfreq: sampling frequency
+    
+    Outputs:
+    Envelope of rectified EMG signal
     """
     
     # process EMG signal: rectify
@@ -115,6 +125,9 @@ def rectify_emg_moving_average(emg, neighbor=10):
     return emg_envelope
 
 def lowpass_filter(data):
+    """
+    Apply lowpass filter on n-dimension data
+    """
     x = np.zeros(data.shape)
     N,M = data.shape[0::2]
     wn=2*fn/1000
@@ -125,6 +138,9 @@ def lowpass_filter(data):
     return x
 
 def bandpass_filter(data,fn=350):
+    """
+    Apply bandpass filter on n-dimension data
+    """
     x = np.zeros(data.shape)
     N,M = data.shape[0::2]
     #wn=2*fn/1000
@@ -140,6 +156,9 @@ def bandpass_filter(data,fn=350):
     return x
 
 def mean_smooth(data,neighbor=5):
+    """
+    Smooth the signal with mean.
+    """
     if data.shape[0] == 0:
         print('empty dataset.')
         return np.array([])
@@ -152,8 +171,20 @@ def mean_smooth(data,neighbor=5):
     return results/(neighbor*2+1)
 
 def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_label=False):
-    #sc = joblib.load('./model/scalar')
-    #sc = MinMaxScaler()
+    """
+    Segment the signal.
+    
+    Inputs:
+    data: the signal to segment
+    width: window size
+    stride: step size
+    scaler: if True use standard scaler on data
+    same_label: if True only use the data with same label1 and label2
+    
+    Outputs:
+    segmented signal
+    
+    """
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
@@ -168,105 +199,36 @@ def generate_window_slide_data(data,width = 256,stride = 64,scaler=False,same_la
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
                 x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]),axis=0)
                 X += [x_sc]
-                #print(set(data.Label2[i*stride:i*stride+width]))
             else:
                 continue
     else:
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 Y += [data.Label2[i*stride]]
-                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
                 X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
-                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
                 continue
     
     return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
 
-def generate_window_slide_data_mix(data,width = 256,stride = 64,scaler=False,same_label=False,mix=0.8):
-    #sc = joblib.load('./model/scalar')
-    #sc = MinMaxScaler()
-    if same_label:
-        ind = (data.Label1 == data.Label2)
-        data = data.loc[ind,:].reset_index(drop=True)
-        
-    l = len(data)
-    end = (l-width)//stride+1
-    X = []
-    Y = []
-    if scaler:
-        sc = StandardScaler(with_mean = False)
-        for i in range(end):
-            temp = data.Label2[i*stride:i*stride+width].value_counts()
-            label_num = temp.max()
-            if label_num/width>mix:
-                Y += [temp.index[temp.argmax()]]
-                x_sc = sc.fit_transform(np.array(data.iloc[i*stride:i*stride+width,3:]))
-                #x_sc = normalize(np.array(data.iloc[i*stride:i*stride+width,3:]),axis=0)
-                X += [x_sc]
-                #print(set(data.Label2[i*stride:i*stride+width]))
-            else:
-                continue
-    else:
-        for i in range(end):
-            temp = data.Label2[i*stride:i*stride+width].value_counts()
-            label_num = temp.max()
-            if label_num/width>mix:
-                Y += [temp.index[temp.argmax()]]
-                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
-                X += [np.array(data.iloc[i*stride:i*stride+width,3:])]
-                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
-            else:
-                continue
-    
-    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
-
-def generate_window_slide_data_NA_remove(data,width = 256,stride = 64,scaler=False,same_label=False):
-    #sc = joblib.load('./model/scalar')
-    #sc = MinMaxScaler()
-    if same_label:
-        ind = (data.Label1 == data.Label2)
-        data = data.loc[ind,:].reset_index(drop=True)
-        
-    l = len(data)
-    end = (l-width)//stride+1
-    X = []
-    Y = []
-    if scaler:
-        sc = StandardScaler(with_mean = False)
-        for i in range(end):
-            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
-                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
-                if np.isnan(np.min(temp)):
-                    continue
-                Y += [data.Label2[i*stride]]
-                #x_sc = sc.fit_transform(temp)
-                x_sc = normalize(temp,axis=0)
-                X += [x_sc]
-                #print(set(data.Label2[i*stride:i*stride+width]))
-            else:
-                continue
-    else:
-        for i in range(end):
-            if len(set(data.Label2[i*stride:i*stride+width])) == 1:
-                temp = np.array(data.iloc[i*stride:i*stride+width,3:])
-                if np.isnan(np.min(temp)):
-                    continue
-                Y += [data.Label2[i*stride]]
-                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
-                X += [temp]
-                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
-            else:
-                continue
-    
-    return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
 
 def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 64,scaler=False,same_label=False):
-    ##sc = joblib.load('./model/scalar')
-    sc = StandardScaler(with_mean = True)
-    #sc = MinMaxScaler((-1,1))
+    """
+    Segment the signal. Only keep the segments with continuous time and low frequency
+    components that not much bigger than the other components.
+    
+    Inputs:
+    data: the signal to segment
+    width: window size
+    stride: step size
+    scaler: if True use standard scaler on data
+    same_label: if True only use the data with same label1 and label2
+    
+    Outputs:
+    segmented signal
+    
+    """
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
@@ -276,6 +238,7 @@ def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 6
     X = []
     Y = []
     if scaler:
+        sc = StandardScaler(with_mean = True)
         for i in range(end):
             if len(set(data.Label2[i*stride:i*stride+width])) == 1:
                 temp = np.array(data.iloc[i*stride:i*stride+width,3:])
@@ -288,6 +251,7 @@ def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 6
                     ind_l = freqs<20
                     max_l = np.max(power[ind_l])
                     max_h = np.max(power[~ind_l])
+                    # The amplitude of frequency components which are lower than 20 Hz must be less than 10 times of the other components and the amplitude of max frequency must over 0.5
                     if (max_l>10*max_h) | (max_h<0.5):
                         skip = True
                         break
@@ -295,9 +259,7 @@ def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 6
                     continue
                 Y += [data.Label2[i*stride]]
                 x_sc = sc.fit_transform(temp)
-                #x_sc = normalize(temp,axis=0)
                 X += [x_sc]
-                #print(set(data.Label2[i*stride:i*stride+width]))
             else:
                 continue
     else:
@@ -319,17 +281,27 @@ def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 6
                 if skip:
                     continue
                 Y += [data.Label2[i*stride]]
-                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
                 X += [temp]
-                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
                 continue
     
     return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
 
 def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler=False,same_label=False):
-    #sc = joblib.load('./model/scalar')
-    #sc = MinMaxScaler()
+    """
+    Segment the signal. Only keep the segments with continuous time.
+    
+    Inputs:
+    data: the signal to segment
+    width: window size
+    stride: step size
+    scaler: if True use standard scaler on data
+    same_label: if True only use the data with same label1 and label2
+    
+    Outputs:
+    segmented signal
+    """    
+
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
@@ -348,9 +320,7 @@ def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler
                     continue
                 Y += [data.Label2[i*stride]]
                 x_sc = sc.fit_transform(temp)
-                #x_sc = normalize(temp,axis=0)
                 X += [x_sc]
-                #print(set(data.Label2[i*stride:i*stride+width]))
             else:
                 continue
     else:
@@ -361,48 +331,18 @@ def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler
                 if (np.round(time[1:]-time[:-1],3)>0.001).any():
                     continue
                 Y += [data.Label2[i*stride]]
-                #X += [np.clip(np.array(data.iloc[i*stride:i*stride+width,3:]),-500,500)]
                 X += [temp]
-                #print(np.array(data.iloc[i*stride:i*stride+width,3:]).shape)
             else:
                 continue
     
     return np.array(X,dtype=np.float32),np.array(Y,dtype=np.uint8)
 
-def generate_window_slide_data2(emg_data,width = 256,stride = 64,same_label=False):
-    fn = 20
-    wn=2*fn/1000
-    fn1 = 300
-    wn1 = 2*fn1/1000
-    b, a = signal.butter(4, [wn,wn1], 'bandpass')
-    fs = 1000.0  # Sample frequency (Hz)
-    f0 = 50  # Frequency to be removed from signal (Hz)
-    Q = 100.0  # Quality factor
-    b1, a1 = signal.iirnotch(f0, Q, fs)
-    b2, a2 = signal.iirnotch(75.,Q, fs)
-    #b, a = signal.butter(4, wn, filt[1])
-    for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
-        emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
-        emg_data.loc[:,i] = signal.filtfilt(b1, a1, emg_data.loc[:,i])
-        emg_data.loc[:,i] = signal.filtfilt(b2, a2, emg_data.loc[:,i])
-        ind = abs(zscore(emg_data.loc[:,i]))<10
-        emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
-    sc = StandardScaler()
-    emg_data.iloc[:,3:] = sc.fit_transform(emg_data.iloc[:,3:])
-    x,y = generate_window_slide_data(emg_data,width = width,stride = stride,scaler=False,same_label=same_label)
-    
-    return x,y
-
-#def generate_CWT_feature(data,widths=260,wavelet = signal.ricker):
-#    n,t,c = data.shape
-#    cwtmatr = np.zeros((n,widths,t,c))
-#    for i in range(n):
-#        for j in range(c):
-#            cwtmatr[i,:,:,j] = signal.cwt(data[i,:,j],wavelet,np.arange(1,widths+1))
-#    return cwtmatr
 
 
 def generate_CWT_feature(data,scale=32,wavelet = 'mexh'):
+    """
+    Compute continuous wavelet transform of EMG signal
+    """
     n,t,c = data.shape
     fc = pywt.central_frequency(wavelet)
     cparam = 2 * fc * scale
@@ -415,6 +355,9 @@ def generate_CWT_feature(data,scale=32,wavelet = 'mexh'):
     return cwtmatr
 
 def compute_CWT_feature(data,scale=32,wavelet = 'mexh'):
+    """
+    Compute features based on continuous wavelet transform of EMG signal
+    """
     n,t,c = data.shape
     cwt = np.zeros((n,4*c))
     #print(cwt.shape)
@@ -447,6 +390,9 @@ def standard(x):
     return results
 
 def compute_DWT(data,wavelet='db7',level=3):
+    """
+    Compute discrete wavelet transform of EMG signal
+    """
     N,M = data.shape[0::2]
     feature = []
     sc = StandardScaler()
@@ -461,89 +407,99 @@ def compute_DWT(data,wavelet='db7',level=3):
     return feature    
 
 def compute_IEMG(data):
+    """
+    Compute integrated EMG
+    """
     IEMG = np.sum(np.abs(data),axis=1)
     return IEMG
 
 def compute_MAV(data):
+    """
+    Compute mean average value of data
+    """
     N = data.shape[1]
     return np.sum(np.abs(data),axis=1)/N
 
 def compute_SSI(data):
+    """
+    Compute simple square data
+    """
     return np.sum(np.power(data,2),axis=1)
 
 def compute_VAR(data):
+    """
+    Compute variance of data
+    """
     N = data.shape[1]
     return compute_SSI(data)/(N-1)
 
 def compute_RMS(data):
+    """
+    Compute root mean square of EMG data
+    """
     N = data.shape[1]
     return np.sqrt(compute_SSI(data)/N)
 
 def compute_WL(data):
+    """
+    Compute waveform length
+    """
     temp = data[:,1:,:]-data[:,:-1,:]
     return compute_IEMG(temp)
 
 def compute_ZC(data,threshold=0):
-    #noise = 1e-2
-    #data = data+noise
+    """
+    Compute zero crossing
+    data: EMG signal
+    threshold: Threshold condition is used to avoid from background noise.
+    
+    outputs:
+    the number of times that the amplitude values of EMG signal crosses zero in x-axis.
+    """
     l = len(data)
     sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
     sub = np.abs(data[:,1:,:]-data[:,:-1,:])>threshold
     return np.sum(sign & sub,axis=1)/l
 
 def compute_ku(data):
+    """
+    Compute kurtosis of data
+    """
     return kurtosis(data,1)
 
-def compute_ZC_expand(data,threshold):
-    #noise = 1e-2
-    #data = data+noise
-    n,_,c=data.shape
-    m = len(threshold)
-    results = np.zeros((n,m,c))
-    sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
-    for i in range(m):
-        sub = np.sign(threshold[i]+1e-5)*(data[:,1:,:]-data[:,:-1,:])>np.abs(threshold[i])
-        results[:,i,:]=np.sum(sign & sub,axis=1)
-    return results
-
-def compute_ZC_expand_pd(data,threshold):
-
-    n,_,c=data.shape
-    m = len(threshold)
-    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
-       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
-    columns_b = []
-    index = []
-    for j in range(m):
-        columns_b += ['_ZC%d'%j]
-    columns_b = pd.Index(columns_b)
-    for col in columns:
-        index += (col+columns_b).to_list()
-    results = np.zeros((n,m,c))
-    sign = ((data[:,1:,:])*(data[:,:-1,:]))<0
-    for i in range(m):
-        sub = np.sign(threshold[i]+1e-5)*(data[:,1:,:]-data[:,:-1,:])>np.abs(threshold[i])
-        results[:,i,:]=np.sum(sign & sub,axis=1)
-    return pd.DataFrame(results.reshape((-1,m*c)),columns=index)
-
 def compute_SSC(data,threshold=0):
+    """
+    Compute slope sign change
+    """
     sign = (data[:,1:-1,:]-data[:,:-2,:])*(data[:,2:,:]-data[:,1:-1,:])
     ssc = (sign > 0) & (((data[:,1:-1,:]-data[:,:-2,:])>threshold) | ((data[:,1:-1,:]-data[:,2:,:])>threshold))
     return np.sum(ssc,axis=1)
 
 def compute_WAMP(data,threshold = 0):
+    """
+    Compute the number of time resulting from the difference between EMG signal amplitude of two adjoining segments that exceeds a predefined threshold
+    """
     temp = np.abs(data[:,1:,:]-data[:,:-1,:])>=threshold
     return np.sum(temp,axis=1)
 
 def compute_Skewness(data):
+    """
+    Compute skewness of data
+    """
     return skew(data,axis=1)
 
 def compute_Acti(data):
+    """
+    Compute activity which is one of Hjorth Parameters
+    """
     N = data.shape[1]
     mean = np.mean(data,axis=1)
     return np.sum((data-mean[:,np.newaxis,:])**2,axis=1)/N
 
 def compute_Mobi(data):
+    """
+    Compute mobility which is one of Hjorth Parameters
+    """
     N,L,C = data.shape
     feature = np.zeros((N,C))
     for i in range(N):
@@ -555,6 +511,9 @@ def compute_Mobi(data):
     return feature
 
 def compute_complexity(data):
+    """
+    Compute complexity which is one of Hjorth Parameters
+    """
     N,L,C = data.shape
     xd = np.zeros((N,L,C))
     for i in range(N):
@@ -563,6 +522,16 @@ def compute_complexity(data):
     return compute_Mobi(xd)/compute_Mobi(data)
 
 def compute_AR(data,p=4):
+    """
+    Compute Autoregression Coefficient
+    
+    Inputs:
+    data: EMG signal
+    p: Model order
+    
+    Outputs:
+    Autoregression Coefficient
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,M))
@@ -574,9 +543,13 @@ def compute_AR(data,p=4):
 
 def compute_cc(ak,p=4):
     '''
-        Compute  Cepstral Coefficient with Autoregression Coefficient for compute_CC
-        inputs:  Autoregression Coefficient
-        outputs: Cepstral Coefficient
+    Compute  Cepstral Coefficient with Autoregression Coefficient for compute_CC
+    
+    Inputs:  
+    ak: Autoregression Coefficient
+    p: Model order
+    
+    Outputs: Cepstral Coefficient
     '''
     cc = np.zeros(p)
     for i in np.arange(p):
@@ -589,12 +562,17 @@ def compute_cc(ak,p=4):
 def compute_CC(data,p=4):
     
     '''
-        Compute Cepstral Coefficient of data matrix
-        inputs: data [N,L,C]
-        N: number of data
-        L: length of signal
-        C: number of channels 
-        outputs: Cepstral Coefficient
+    Compute Cepstral Coefficient of data matrix
+    
+    Inputs: 
+    data [N,L,C]
+    N: number of data
+    L: length of signal
+    C: number of channels 
+    
+    p: Model order
+    
+    Outputs: Cepstral Coefficient
     '''
     
     N = len(data)
@@ -605,17 +583,23 @@ def compute_CC(data,p=4):
         for j in range(C):
             ak,_ = AR_est_YW(data[i,:,j],p)
             feature[i,:,j] = compute_cc(ak,p)
+            
     return feature
 
 def compute_CC_pd(data,p=4):
     
     '''
-        Compute Cepstral Coefficient of data matrix
-        inputs: data [N,L,C]
-        N: number of data
-        L: length of signal
-        C: number of channels 
-        outputs: Cepstral Coefficient
+    Compute Cepstral Coefficient of data matrix (pandas output version)
+    
+    Inputs: 
+    data [N,L,C]
+    N: number of data
+    L: length of signal
+    C: number of channels 
+    
+    p: Model order
+    
+    Outputs: Cepstral Coefficient
     '''
     
     N = len(data)
@@ -626,9 +610,11 @@ def compute_CC_pd(data,p=4):
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     columns_b = []
     index = []
+    
     for m in range(p):
         columns_b += ['_CC%d'%m]
     columns_b = pd.Index(columns_b)
+    
     for col in columns:
         index += (col+columns_b).to_list()
     
@@ -636,9 +622,21 @@ def compute_CC_pd(data,p=4):
         for j in range(C):
             ak,_ = AR_est_YW(data[i,:,j],p)
             feature[i,j*p:(j+1)*p] = compute_cc(ak,p)
+            
     return pd.DataFrame(feature,columns=index)
 
 def compute_AR_pd(data,p=4):
+    """
+    Compute Autoregression Coefficient (pandas output version)
+    
+    Inputs:
+    data: EMG signal
+    p: Model order
+    
+    Outputs:
+    Autoregression Coefficient
+    
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,M*p))
@@ -646,28 +644,56 @@ def compute_AR_pd(data,p=4):
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     columns_b = []
     index = []
+    
     for m in range(p):
         columns_b += ['_AR%d'%m]
     columns_b = pd.Index(columns_b)
+    
     for col in columns:
         index += (col+columns_b).to_list()
+        
     for i in range(N):
         for j in range(M):
             ak,_ = AR_est_YW(data[i,:,j],p)
             feature[i,j*p:(j+1)*p] = ak
+            
     return pd.DataFrame(feature,columns=index)
 
 def compute_HIST(data,bins=9,ranges=(-10,10)):
+    """
+    Compute EMG Histogram
+    
+    Inputs:
+    data: EMG signal
+    bins: the number of bins
+    ranges: the lower and upper range of the bins
+    
+    Outputs:
+    Histogram
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,bins*M))
+    
     for i in range(N):
         for j in range(M):
             hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
             feature[i,j*bins:(j+1)*bins] = hist
+            
     return feature
 
 def compute_HIST_pd(data,bins=9,ranges=(-10,10)):
+    """
+    Compute EMG Histogram (pandas output version)
+    
+    Inputs:
+    data: EMG signal
+    bins: the number of bins
+    ranges: the lower and upper range of the bins
+    
+    Outputs:
+    Histogram
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,bins*M))
@@ -675,19 +701,34 @@ def compute_HIST_pd(data,bins=9,ranges=(-10,10)):
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     columns_b = []
     index = []
+    
     for m in range(bins):
         columns_b += ['_HIST%d'%m]
     columns_b = pd.Index(columns_b)
+    
     for col in columns:
         index += (col+columns_b).to_list()
-    #print(index)
+    
     for i in range(N):
         for j in range(M):
             hist,_ = np.histogram(data[i,:,j],bins=bins,range=ranges)
             feature[i,j*bins:(j+1)*bins] = hist
+            
     return pd.DataFrame(feature,columns=index)
 
 def compute_FHIST_pd(data,bins=5,ranges=(0,300),threshold = 0.5):
+    """
+    Compute EMG frequency Histogram
+    
+    Inputs:
+    data: EMG signal
+    bins: the number of bins
+    ranges: the lower and upper range of the bins
+    threshold: the minimum frequency amplitude which is used
+    
+    Outputs:
+    Histogram
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,bins*M))
@@ -695,23 +736,34 @@ def compute_FHIST_pd(data,bins=5,ranges=(0,300),threshold = 0.5):
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     columns_b = []
     index = []
+    
     for m in range(bins):
         columns_b += ['_FHIST%d'%m]
     columns_b = pd.Index(columns_b)
+    
     for col in columns:
         index += (col+columns_b).to_list()
-    #print(index)
+        
     for i in range(N):
         for j in range(M):
             freqs, power=signal.periodogram(data[i,:,j], 1e3)
-            #sc = MinMaxScaler((0,1))
-            #power = sc.fit_transform(power[:,np.newaxis])
-            ind = (power > threshold)#[:,0]
+            ind = (power > threshold)
             hist,_ = np.histogram(freqs[ind],bins=bins,range=ranges)
             feature[i,j*bins:(j+1)*bins] = hist
+            
     return pd.DataFrame(feature,columns=index)    
 
 def compute_MaxFreq_pd(data,num=3):
+    """
+    Compute max frequency of EMG signal (pandas output version)
+    
+    Inputs:
+    data: EMG signal
+    num: The number how much of the largest frequency is used
+    
+    Outputs:
+    Max frequency
+    """
     N = len(data)
     M = data.shape[-1]
     feature = np.zeros((N,num*M))
@@ -719,35 +771,42 @@ def compute_MaxFreq_pd(data,num=3):
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     columns_b = []
     index = []
+    
     for m in range(num):
         columns_b += ['_MF%d'%m]
     columns_b = pd.Index(columns_b)
+    
     for col in columns:
         index += (col+columns_b).to_list()
-    #print(index)
+    
     for i in range(N):
         for j in range(M):
             freqs, power=signal.periodogram(data[i,:,j], 1e3)
-            #sc = MinMaxScaler((0,1))
-            #power = sc.fit_transform(power[:,np.newaxis])
             ind = np.argsort(-power)[:num]
             feature[i,j*num:(j+1)*num] = freqs[ind]
+            
     return pd.DataFrame(feature,columns=index)  
 
 def compute_MDF(data):
+    """
+    Compute median frequency 
+    """
     N,M = data.shape[0::2]
     feature = np.zeros((N,M))
+    
     for i in range(N):
         for j in range(M):
             freqs, power=signal.periodogram(data[i,:,j], 1e3)
             total = (cumtrapz(power,freqs))
-            #print(i,j,np.where(total>=(total[-1]/2)))
             w=np.where(total>=(total[-1]/2))[0][0]
             feature[i,j] = freqs[w]
-            #print(w,freqs[w])
+            
     return feature
 
 def compute_MNF(data):
+    """
+    Compute mean frequency
+    """
     N,M = data.shape[0::2]
     feature = np.zeros((N,M))
     for i in range(N):
@@ -757,6 +816,9 @@ def compute_MNF(data):
     return feature
 
 def mDWT(data,wavelet='db7',level=3):
+    """
+    For compute_mDWT
+    """
     wa = pywt.wavedec(data,wavelet,level=level)
     #print(len(wa))
     wa = np.concatenate(wa)
@@ -770,6 +832,9 @@ def mDWT(data,wavelet='db7',level=3):
     return M
     
 def compute_mDWT(data,wavelet='db7',level=3):
+    """
+    Compute Marginal Discrete Wavelet Transform
+    """
     N,M = data.shape[0::2]
     feature = []
     for i in range(N):
@@ -780,6 +845,9 @@ def compute_mDWT(data,wavelet='db7',level=3):
     return feature
 
 def compute_mDWT_pd(data,wavelet='db7',level=3):
+    """
+    Compute Marginal Discrete Wavelet Transform (pandas output version)
+    """
     N,M = data.shape[0::2]
     feature = []
     for i in range(N):
@@ -805,31 +873,92 @@ def generate_feature(data,threshold_WAMP=30,
                      threshold_SSC=0,
                      bins=9,
                      ranges=(-10,10),
-                     show_para=True):
-    IEMG = compute_IEMG(data)
-    MAV = compute_MAV(data)
-    SSI = compute_SSI(data)
-    VAR = compute_VAR(data)
-    RMS = compute_RMS(data)
-    WL = compute_WL(data)
-    ZC = compute_ZC(data,threshold_ZC)
-    SSC = compute_SSC(data,threshold_SSC)
-    WAMP = compute_WAMP(data,threshold_WAMP)
-    skew = compute_Skewness(data)
-    Acti = compute_Acti(data)
-    Mobi = compute_Mobi(data)
-    Comp = compute_complexity(data)
-    AR = compute_AR(data)
-    CC = compute_CC(data)
-    HIST = compute_HIST(data,bins=bins,ranges=ranges)
-    MDF = compute_MDF(data)
-    MNF = compute_MNF(data)
-    mDWT = compute_mDWT(data)
-    feature = np.concatenate([IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,Mobi,Comp,AR,CC,HIST,MDF,MNF,mDWT],axis =1)
+                     wavelet='db7',
+                     level=3,
+                     show_para=True,
+                    feature_list=['IEMG','SSI','WL','ZC','ku','SSC','skew','Acti','AR','HIST','MDF','MNF','mDWT']
+                    ):
+    """
+    Generate features.
+    Inputs:
+    data: (N,L,C)
+    N: Number of signal
+    L: Length of signal
+    C: Number of channels
+    
+    threshold_WAP: threshold for willison amplitude
+    threshold_ZC: threshold for zero crossing
+    bins: bins for EMG Histogram
+    ranges: ranges fof EMG Histogram
+    show_para: if True show the list of name of features
+    """
+    feature = []
+    if 'IEMG' in feature_list:
+        IEMG = compute_IEMG(data)
+        feature+=[IEMG]
+    if 'MAV' in feature_list:
+        MAV = compute_MAV(data)
+        feature+=[MAV]
+    if 'SSI' in feature_list:
+        SSI = compute_SSI(data)
+        feature+=[SSI]
+    if 'VAR' in feature_list:
+        VAR = compute_VAR(data)
+        feature+=[VAR]
+    if 'RMS' in feature_list:
+        RMS = compute_RMS(data)
+        feature+=[RMS]
+    if 'WL' in feature_list:
+        WL = compute_WL(data)
+        feature+=[WL]
+    if 'ZC' in feature_list:
+        ZC = compute_ZC(data,threshold_ZC)
+        feature+=[ZC]
+    if 'ku' in feature_list:
+        ku = compute_ku(data)
+        feature+=[ku]
+    if 'SSC' in feature_list:
+        SSC = compute_SSC(data,threshold_SSC)
+        feature+=[SSC]
+    if 'WAMP' in feature_list:
+        WAMP = compute_WAMP(data,threshold_WAMP)
+        feature+=[WAMP]
+    if 'skew' in feature_list:
+        skew = compute_Skewness(data)
+        feature+=[skew]
+    if 'Acti' in feature_list:
+        Acti = compute_Acti(data)
+        feature+=[Acti]
+    if 'Mobi' in feature_list:
+        Mobi = compute_Mobi(data)
+        feature+=[Mobi]
+    if 'Comp' in feature_list:
+        Comp = compute_complexity(data)
+        feature+=[Comp]
+    if 'AR' in feature_list:
+        AR = compute_AR(data)
+        feature+=[AR]
+    if 'CC' in feature_list:
+        CC = compute_CC(data)
+        feature+=[CC]
+    if 'HIST' in feature_list:
+        HIST = compute_HIST(data,bins=bins,ranges=ranges)
+        feature+=[HIST]
+    if 'MDF' in feature_list:
+        MDF = compute_MDF(data)
+        feature+=[MDF]
+    if 'MNF' in feature_list:
+        MNF = compute_MNF(data)
+        feature+=[MNF]
+    if 'mDWT' in feature_list:
+        mDWT = compute_mDWT(data,wavelet,level)
+        feature+=[mDWT]
+    
+    feature = np.concatenate(feature,axis =1)
     if show_para:
         print('threshold_WAMP:%0.1f, threshold_ZC:%0.1f, threshold_SSC:%0.1f,bins:%d,ranges:(%d,%d)'
           %(threshold_WAMP,threshold_ZC,threshold_SSC,bins,ranges[0],ranges[1]))
-        print('IEMG,MAV,SSI,VAR,RMS,WL,ZC,SSC,WAMP,skew,Acti,AR,HIST,MDF,MNF,mDWT')
+        print(feature_list)
     return feature
 
 def generate_feature_pd(data,threshold_WAMP=30,
@@ -843,6 +972,9 @@ def generate_feature_pd(data,threshold_WAMP=30,
                      num = 3,
                      wavelet='db7',
                      level=3):
+    """
+    Generate features (pandas output version)
+    """
     columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
        'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
     IEMG = pd.DataFrame(compute_IEMG(data),columns=columns+'_IEMG')
@@ -872,324 +1004,8 @@ def generate_feature_pd(data,threshold_WAMP=30,
     feature = pd.concat([IEMG,SSI,WL,ZC,ku,SSC,WAMP,skew,Acti,Mobi,Comp,AR,CC,HIST,MF,MDF,MNF,mDWT],axis =1)
     return feature
 
-def pipeline_feature(path,width = 256,
-                     columns = None,
-                     stride = 32,
-                     scaler=False,
-                     threshold_WAMP=30,
-                     threshold_ZC=0,
-                     threshold_SSC=0,
-                     bins=9,
-                     ranges=(-10,10),
-                     level=3,
-                     show_para=True,
-                     filt = None):
-    emg_data = pd.read_csv(path)
-    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
-                           'LEFT_TS':emg_data.LEFT_TS.mean(),
-                           'LEFT_BF':emg_data.LEFT_BF.mean(),
-                           'LEFT_RF':emg_data.LEFT_RF.mean(),
-                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
-                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
-                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
-                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    if columns != None:
-        emg_data = emg_data[['Time','Label1','Label2']+columns]
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
-    if filt != None:
-        x = lowpass_filter(x,filt)
-    feature = generate_feature(x,threshold_WAMP=threshold_WAMP,
-                               threshold_ZC=threshold_ZC,
-                               threshold_SSC=threshold_SSC,
-                               bins=bins,
-                               ranges=ranges,
-                               show_para=show_para,
-                               level=level)
-    return feature,y
 
-def pipeline_feature_pd(path,width = 256,
-                     stride = 32,
-                     scaler=False,
-                     threshold_WAMP=30,
-                     threshold_ZC=0,
-                     threshold_SSC=0,
-                     bins=9,
-                     ranges=(-10,10),
-                     fbins=5,
-                     franges=(0,300),
-                     threshold_F=0.5,
-                     num = 3,
-                     level=3,
-                     filt = None,
-                     drop_na=False,
-                     same_label=False):
-    emg_data = pd.read_csv(path)
 
-    if drop_na:
-        emg_data = emg_data.dropna().reset_index(drop=True)
-        #print(emg_data)
-        drop = False
-    else:
-        length = len(emg_data)
-        na = emg_data.isna().sum()
-        cri = na > length/10
-        if any(cri):
-            return True, []
-        else:
-            drop = False
-        emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
-                           'LEFT_TS':emg_data.LEFT_TS.mean(),
-                           'LEFT_BF':emg_data.LEFT_BF.mean(),
-                           'LEFT_RF':emg_data.LEFT_RF.mean(),
-                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
-                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
-                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
-                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    if filt != None:
-        fn = 10
-        wn=2*fn/1000
-        fn1 = 350
-        wn1 = 2*fn1/1000
-        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
-        b, a = signal.butter(1, wn, 'highpass')
-        for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
-            emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
-    #emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
-    #mc = MinMaxScaler((-1,1))
-    #emg_data.iloc[:,3:] = mc.fit_transform(emg_data.iloc[:,3:])
-    x,y = generate_window_slide_data(emg_data,
-                          width=width,
-                          stride=stride,
-                          scaler=scaler,
-                          same_label=same_label)
-    #if filt != None:
-    #    x = bandpass_filter(x)
-    Data = pd.DataFrame(y,columns=['Label'])
-    feature = generate_feature_pd(x,threshold_WAMP=threshold_WAMP,
-                               threshold_ZC=threshold_ZC,
-                               threshold_SSC=threshold_SSC,
-                               bins=bins,
-                               ranges=ranges,
-                               fbins=fbins,
-                               franges=franges,
-                               threshold_F=threshold_F,
-                               level=level,
-                               num = num)
-    Data = Data.join(feature)
-    Data['File']=path.split('/')[-1]
-    return drop, Data
-
-def pipeline_feature_pd2(path,width = 256,
-                     stride = 32,
-                     scaler=False,
-                     threshold_WAMP=30,
-                     threshold_ZC=0,
-                     threshold_SSC=0,
-                     bins=9,
-                     ranges=(-10,10),
-                     fbins=5,
-                     franges=(0,300),
-                     threshold_F=0.5,
-                     num = 3,
-                     level=3,
-                     same_label=False):
-    emg_data = pd.read_csv(path)
-
-    emg_data = emg_data.dropna().reset_index(drop=True)
-
-    fn = 20
-    wn=2*fn/1000
-    fn1 = 300
-    wn1 = 2*fn1/1000
-    b, a = signal.butter(4, [wn,wn1], 'bandpass')
-    fs = 1000.0  # Sample frequency (Hz)
-    f0 = 50  # Frequency to be removed from signal (Hz)
-    Q = 100.0  # Quality factor
-    b1, a1 = signal.iirnotch(f0, Q, fs)
-    #b, a = signal.butter(4, wn, filt[1])
-    for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
-        emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
-        emg_data.loc[:,i] = signal.filtfilt(b1, a1, emg_data.loc[:,i])
-        ind = abs(zscore(emg_data.loc[:,i]))<10
-        emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
-    sc = StandardScaler()
-    emg_data.iloc[:,3:] = sc.fit_transform(emg_data.iloc[:,3:])
-    
-    x,y = generate_window_slide_data(emg_data,
-                          width=width,
-                          stride=stride,
-                          scaler=scaler,
-                          same_label=same_label)
-
-    Data = pd.DataFrame(y,columns=['Label'])
-    feature = generate_feature_pd(x,threshold_WAMP=threshold_WAMP,
-                               threshold_ZC=threshold_ZC,
-                               threshold_SSC=threshold_SSC,
-                               bins=bins,
-                               ranges=ranges,
-                               fbins=fbins,
-                               franges=franges,
-                               threshold_F=threshold_F,
-                               level=level,
-                               num = num)
-    Data = Data.join(feature)
-    Data['File']=path.split('/')[-1]
-    return Data
-
-def pipeline_selected_feature(path,
-                     columns = None,
-                     drop_cols = None,
-                     width = 256,
-                     stride = 32,
-                     scaler=False,
-                     threshold_WAMP=30,
-                     threshold_ZC=0,
-                     threshold_SSC=0,
-                     bins=9,
-                     ranges=(-10,10),
-                     show_para=True):
-    emg_data = pd.read_csv(path)
-    emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
-                           'LEFT_TS':emg_data.LEFT_TS.mean(),
-                           'LEFT_BF':emg_data.LEFT_BF.mean(),
-                           'LEFT_RF':emg_data.LEFT_RF.mean(),
-                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
-                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
-                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
-                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    if columns != None:
-        emg_data = emg_data[['Time','Label1','Label2']+columns]
-    if drop_cols != None:
-        emg_data = emg_data.drop(columns = drop_cols)
-    x,y = generate_window_slide_data(emg_data,width=width,stride=stride,scaler=scaler)
-    feature = generate_feature(x,threshold_WAMP=threshold_WAMP,
-                               threshold_ZC=threshold_ZC,
-                               threshold_SSC=threshold_SSC,
-                               bins=bins,
-                               ranges=ranges,
-                               show_para=show_para)
-    return feature,y
-
-def pipeline_cwt(path,
-            width = 256,
-            stride = 64,
-            scaler = False,
-            norm = False,
-            width_c = 32,
-            wavelet = 'mexh',
-            same_label=False,
-            dropna=True,
-            filt=None):
-    emg_data = pd.read_csv(path)
-    if dropna:
-        emg_data = emg_data.dropna().reset_index(drop=True)
-    else:
-        emg_data = emg_data.fillna({'LEFT_TA':emg_data.LEFT_TA.mean(),
-                           'LEFT_TS':emg_data.LEFT_TS.mean(),
-                           'LEFT_BF':emg_data.LEFT_BF.mean(),
-                           'LEFT_RF':emg_data.LEFT_RF.mean(),
-                           'RIGHT_TA':emg_data.RIGHT_TA.mean(),
-                           'RIGHT_TS':emg_data.RIGHT_TS.mean(),
-                           'RIGHT_BF':emg_data.RIGHT_BF.mean(),
-                           'RIGHT_RF':emg_data.RIGHT_RF.mean()})
-    
-    emg_data.iloc[:,3:]=np.clip(emg_data.iloc[:,3:],-500,500)
-    
-    if filt != None:
-        fn = filt
-        wn=2*fn/1000
-        fn1 = 350
-        wn1 = 2*fn1/1000
-        #b, a = signal.butter(4, [wn,wn1], 'bandpass')
-        b, a = signal.butter(4, wn, 'lowpass')
-        for i in ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF','RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']:
-            emg_data.loc[:,i] = signal.filtfilt(b, a, emg_data.loc[:,i])
-            
-    #ind = abs(zscore(emg_data.loc[:,i]))<10
-    #emg_data.loc[~ind,i]=emg_data.loc[ind,i].mean()
-            
-    if norm:
-        ms = MinMaxScaler()
-        emg_data.iloc[:,3:] = ms.fit_transform(emg_data.iloc[:,3:])
-        
-    x,y = generate_window_slide_data(emg_data,
-                          width=width,
-                          stride=stride,
-                          scaler=scaler,
-                          same_label=same_label)
-    cwt = generate_CWT_feature(x,scale=width_c,wavelet=wavelet)
-    return cwt, y
-
-def pipeline_dwt(path,
-            width = 256,
-            stride = 64,
-            scaler = False,
-            norm = False,
-            level = 3,
-            wavelet = 'db7',
-            same_label=False):
-
-    emg_data = pd.read_csv(path)
-    emg_data = emg_data.dropna().reset_index(drop=True)
-    if norm:
-        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
-    x,y = generate_window_slide_data(emg_data,
-                          width=width,
-                          stride=stride,
-                          scaler=scaler,
-                          same_label=same_label)
-    dwt = compute_DWT(x,wavelet,level)
-    
-    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
-       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
-    columns_b = []
-    index = []
-    for m in range(len(dwt[0])//8):
-        columns_b += ['_%d'%m]
-    columns_b = pd.Index(columns_b)
-    for col in columns:
-        index += (col+columns_b).to_list()
-    feature = pd.DataFrame(dwt,columns=index)
-    Data = pd.DataFrame(y,columns=['Label'])
-    Data = Data.join(feature)
-    Data['File']=path.split('/')[-1]
-    return feature
-
-def pipeline_cwt_feature(path,
-                width = 256,
-                stride = 64,
-                scaler = False,
-                norm = False,
-                scale = 32,
-                wavelet = 'mexh',
-                filt = None,
-                same_label=False):
-
-    emg_data = pd.read_csv(path)
-    emg_data = emg_data.dropna().reset_index(drop=True)
-    if norm:
-        emg_data.iloc[:,3:] = normalize(emg_data.iloc[:,3:])
-    x,y = generate_window_slide_data(emg_data,
-                          width=width,
-                          stride=stride,
-                          scaler=scaler,
-                          same_label=same_label)
-    if filt != None:
-        x = lowpass_filter(x,filt)
-    cwt = compute_CWT_feature(x,scale,wavelet)
-    #print(cwt)
-    columns = pd.Index(['LEFT_TA', 'LEFT_TS', 'LEFT_BF', 'LEFT_RF',
-       'RIGHT_TA', 'RIGHT_TS', 'RIGHT_BF', 'RIGHT_RF'])
-    columns_b = ['_Mean_Coe','_Min_Coe','_Mean_Scale','_Median_Scale']
-    index = []
-    columns_b = pd.Index(columns_b)
-    for col in columns:
-        index += (col+columns_b).to_list()
-    feature = pd.DataFrame(cwt,columns=index)
-    Data = pd.DataFrame(y,columns=['Label'])
-    Data = Data.join(feature)
-    Data['File']=path.split('/')[-1]
-    return Data
 
 def get_features_from_dwt(data,wavelet='db7',level=5):
     coes = pywt.wavedec(data,wavelet=wavelet,mode=0,level=level,axis=1)
@@ -1214,4 +1030,18 @@ def get_features_from_dwt(data,wavelet='db7',level=5):
         MDF = pd.DataFrame(dp.compute_MDF(coes[i]),columns=columns+'_MDF%d'%i)
         MNF = pd.DataFrame(dp.compute_MNF(coes[i]),columns=columns+'_MNF%d'%i)
         feature = pd.concat([feature,RMS,ZC,ku,WAMP,skew,Acti,AR,MDF,MNF],axis =1)
+    return feature
+
+def get_dwt(data,wavelet='db7',level=5,mode=0):
+    
+    coes = pywt.wavedec(data,wavelet=wavelet,mode=mode,level=level,axis=1)
+    n,l,c = coes[-1].shape
+    feature = np.zeros((n,l,c,0))
+    
+    for i in range(len(coes)-1):
+        temp = signal.resample(coes[i],l,axis=1)[:,:,:,np.newaxis]
+        feature = np.concatenate([feature,temp],axis=3)
+
+    feature = np.concatenate([feature,coes[-1][:,:,:,np.newaxis]],axis=3)
+    
     return feature

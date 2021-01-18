@@ -51,7 +51,7 @@ class NNModel(metaclass=abc.ABCMeta):
         self.keras_model = self.build(mode=mode, config=config)
     
     @abc.abstractmethod
-    def build(self,mode,config):
+    def build(self,config):
         pass
     
     def find_last(self):
@@ -84,9 +84,7 @@ class NNModel(metaclass=abc.ABCMeta):
         return checkpoint
     
     def load_weights(self, filepath, by_name=False, exclude=None):
-        """Modified version of the corresponding Keras function with
-        the addition of multi-GPU support and the ability to exclude
-        some layers from loading.
+        """
         exclude: list of layer names to exclude
         """
         import h5py
@@ -101,8 +99,6 @@ class NNModel(metaclass=abc.ABCMeta):
             if 'layer_names' not in f.attrs and 'model_weights' in f:
                 f = f['model_weights']
 
-            # In multi-GPU training, we wrap the model. Get layers
-            # of the inner model because they have the weights.
             keras_model = self.keras_model
             layers = keras_model.inner_model.layers if hasattr(keras_model, "inner_model")\
                 else keras_model.layers
@@ -158,7 +154,7 @@ class NNModel(metaclass=abc.ABCMeta):
         self.checkpoint_path = self.checkpoint_path.replace(
             "*epoch*", "{epoch:04d}")
         
-    def train(self, train_dataset, val_dataset, epochs, batch_size, other_callbacks=None,class_weights=None,):
+    def train(self, train_dataset, val_dataset, epochs, batch_size, other_callbacks=None):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset.
         epochs: Number of training epochs. Note that previous training epochs
@@ -177,8 +173,8 @@ class NNModel(metaclass=abc.ABCMeta):
         # Callbacks
         callbacks = [keras.callbacks.TensorBoard(log_dir=self.log_dir,
                                 histogram_freq=0, write_graph=True, write_images=False),
-                 keras.callbacks.ModelCheckpoint(self.checkpoint_path,
-                                   verbose=0, save_weights_only=True),]
+                 keras.callbacks.ModelCheckpoint(self.checkpoint_path,verbose=0, 
+                                    save_weights_only=True,save_freq=10)]
         
         # Add other callbacks to the list
         if other_callbacks:
@@ -193,7 +189,7 @@ class NNModel(metaclass=abc.ABCMeta):
                       validation_data=(val_dataset[0],val_dataset[1]),
                       epochs=epochs,
                       batch_size=batch_size,
-                      class_weight=class_weights,
+                      class_weight=self.config.CLASS_WEIGHTS,
                       callbacks=callbacks,
                       shuffle=True
         )

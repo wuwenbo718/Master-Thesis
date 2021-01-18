@@ -3,7 +3,7 @@ from scipy.stats import skew
 from scipy.sparse import spdiags
 import numpy as np
 import pandas as pd
-from nitime.algorithms.autoregressive import AR_est_YW
+# from nitime.algorithms.autoregressive import AR_est_YW
 import pywt
 from scipy import signal
 from scipy.integrate import cumtrapz

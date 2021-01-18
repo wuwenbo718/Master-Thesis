@@ -33,7 +33,7 @@ class Config(object):
                 'RIGHT_TA','RIGHT_TS','RIGHT_BF','RIGHT_RF']
     
     # Files for test set
-    TEST_FILES = ['G07_Freezing_Trial1_trial_1_emg.csv',
+    TEST_FILES = ['G08_FoG_1_trial_1_emg.csv',
               'normal/G09_Walking_trial_2_emg.csv',
               'normal/G09_Walking_trial_4_emg.csv',
               'normal/G09_Walking_trial_6_emg.csv',

@@ -1,0 +1,15 @@
+pca:
+{'select__n_components': 120, 'model__gamma': 'scale', 'model__class_weight': {0: 1, 1: 7}, 'model__C': 1}
+
+0.8744872703518194
+
+rfe:
+{'select__n_features_to_select': 80, 'model__gamma': 'scale', 'model__class_weight': {0: 1, 1: 4}, 'model__C': 1}
+
+0.766864725217366
+
+sfm:
+{'model__gamma': 'scale', 'model__class_weight': {0: 1, 1: 9}, 'model__C': 1}
+
+0.7701170448485682
+

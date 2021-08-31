@@ -1,0 +1,35 @@
+pca:
+{'select__n_components': 80, 'model__subsample': 0.6, 'model__scale_pos_weight': 9, 'model__reg_lambda': 15, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7}
+
+0.9409627187871119
+
+vt:
+{'select__threshold': 0.01, 'model__subsample': 0.5, 'model__scale_pos_weight': 7, 'model__reg_lambda': 28, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.5}
+
+0.9377187738989757
+
+sfm:
+{'model__subsample': 0.5, 'model__scale_pos_weight': 8, 'model__reg_lambda': 22, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7999999999999999}
+
+0.9125975183911453
+
+pca:
+{'select__n_components': 180, 'model__subsample': 0.5, 'model__scale_pos_weight': 9, 'model__reg_lambda': 22, 'model__max_depth': 3, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.8999999999999999}
+
+0.9414993242882564
+
+vt:
+{'select__threshold': 0.01, 'model__subsample': 0.6, 'model__scale_pos_weight': 6, 'model__reg_lambda': 18, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7}
+
+0.9296641419306487
+
+sfm:
+{'model__subsample': 0.7, 'model__scale_pos_weight': 9, 'model__reg_lambda': 28, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7999999999999999}
+
+0.9109991179015253
+
+rfe:
+{'select__n_features_to_select': 180, 'model__subsample': 0.6, 'model__scale_pos_weight': 9, 'model__reg_lambda': 21, 'model__max_depth': 2, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7}
+
+0.9167534759383726
+

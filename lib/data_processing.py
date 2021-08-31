@@ -246,15 +246,19 @@ def generate_window_slide_data_time_continue_fremove(data,width = 256,stride = 6
                 if (np.round(time[1:]-time[:-1],3)>0.001).any():
                     continue
                 skip = False
-                for j in range(temp.shape[-1]):
-                    freqs, power=signal.periodogram(temp[:,j], 1e3)
-                    ind_l = freqs<20
-                    max_l = np.max(power[ind_l])
-                    max_h = np.max(power[~ind_l])
-                    # The amplitude of frequency components which are lower than 20 Hz must be less than 10 times of the other components and the amplitude of max frequency must over 0.5
-                    if (max_l>10*max_h) | (max_h<0.5):
-                        skip = True
-                        break
+#                 for j in range(temp.shape[-1]):
+#                     freqs, power=signal.periodogram(temp[:,j], 1e3)
+#                     ind_l = freqs<20
+#                     max_l = np.max(power[ind_l])
+#                     max_h = np.max(power[~ind_l])
+                freqs, power=signal.periodogram(temp, 1e3,axis=0)
+                ind_l = freqs<250
+                max_l = np.max(power[ind_l],axis=0)
+                max_h = np.max(power[~ind_l],axis=0)
+                # The amplitude of frequency components that is lower than 20 Hz must be less than 10 times of the other components and the amplitude of max frequency must over 0.5
+                if  np.all(max_l<0.5):
+                    print(time[0],':',time[-1])
+                    skip = True
                 if skip:
                     continue
                 Y += [data.Label2[i*stride]]

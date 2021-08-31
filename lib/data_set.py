@@ -26,13 +26,17 @@ class Dataset(object):
         self.stride = config.STEP_SIZE
         self.channels = ['Time','Label1','Label2']+config.CHANNELS
         self.fn_lp = config.FN_LP
+        self.fn_hp = config.FN_HP
+        self.fn_ir = config.FN_IR
         self.scaler = config.SCALE
         self.same_label = config.SAME_LABEL
+        self.drop_with_zscore = config.DROP_WITH_ZSCORE
+        self.remove_freqs = config.REMOVE_FREQS
         self.Lambda = config.DETREND_LAMBDA
         self.test_files = config.TEST_FILES
         self.train_ratio = config.TRAIN_SET_RATIO
 
-    def load_data(self,files):
+    def load_data(self,files,show_process=True):
 
         N = len(files)
         
@@ -55,12 +59,37 @@ class Dataset(object):
             emg_data = pd.read_csv('./data/'+file)
             # drop out NA value and take data from selected channels
             emg_data = emg_data.loc[:,self.channels].dropna().reset_index(drop=True)
+            
+#             if (self.fn_hp != None) & (self.Lambda == None):
+#                 wn=2*self.fn_hp/1000
+#                 b, a = signal.butter(4, [wn], 'highpass')
+#                 emg_data.iloc[:,3:] = signal.filtfilt(b,a,emg_data.iloc[:,3:],axis=0)
+            
+#             if self.fn_lp != None:
+#                 wn=2*self.fn_lp/1000
+#                 b, a = signal.butter(4, [wn], 'lowpass')
+#                 emg_data.iloc[:,3:] = signal.filtfilt(b,a,emg_data.iloc[:,3:],axis=0)
+                
+#             if self.fn_ir:
+#                 for c in range(len(self.channels[3:])):
+#                     freqs, power=signal.periodogram(emg_data.iloc[:,c], 1e3)
+#                     fmax = np.argmax(power)
+#                     if (freqs[fmax] >49) & (freqs[fmax] <51):
+#                         fs = 1000.0  # Sample frequency (Hz)
+#                         f0 = 50  # Frequency to be removed from signal (Hz)
+#                         Q = 200.0  # Quality factor
+#                         # Design notch filter
+#                         b1, a1 = signal.iirnotch(f0, Q, fs)
+#                         emg_data.iloc[:,c] = signal.filtfilt(b1,a1,emg_data.iloc[:,c])
+#                         print('fn_ir')
 
             x,y = utils.generate_window_slide_data_time_continue(emg_data, 
                                               width=self.width,
                                               stride=self.stride,
                                               scaler=self.scaler,
-                                              same_label=self.same_label)
+                                              same_label=self.same_label,
+                                              drop_with_zscore=self.drop_with_zscore,
+                                              remove_freqs=self.remove_freqs)
  
             shape = x.shape
             
@@ -72,14 +101,34 @@ class Dataset(object):
             # use detrend methode (similar with highpass filter)
             if self.Lambda != None:
                 x = utils.detrend(x,self.Lambda)
+            # use highpass filter if lambda is not given
+            elif self.fn_hp != None:
+                wn=2*self.fn_hp/1000
+                b, a = signal.butter(4, [wn], 'highpass')
+                x = signal.filtfilt(b,a,x,axis=1)
             
             # use lowpass filter
             if self.fn_lp != None:
                 wn=2*self.fn_lp/1000
                 b, a = signal.butter(4, [wn], 'lowpass')
-                for n in range(shape[0]):
-                    for c in range(shape[2]):
-                        x[n,:,c] = signal.filtfilt(b,a,x[n,:,c])
+                x = signal.filtfilt(b,a,x,axis=1)
+                
+            if self.fn_ir:
+                freqs, power=signal.periodogram(x, 1e3, axis=1)
+                fmax = np.argmax(power,axis=1)
+                freqs = np.broadcast_to(freqs[np.newaxis,:,np.newaxis], power.shape)
+                fmax = np.take_along_axis(freqs,fmax[:,np.newaxis,:],axis=1)
+                
+                ind_temp = (fmax < 51) & (fmax > 49) & (np.max(power,axis=1)>0.1)[:,np.newaxis,:]
+                f_ind = np.where(ind_temp)
+                if np.any(np.any(ind_temp)):
+                    print('fn_ir:',np.sum(ind_temp),' ',np.array(np.where(ind_temp))[[0,2]])
+                fs = 1000.0  # Sample frequency (Hz)
+                f0 = 50  # Frequency to be removed from signal (Hz)
+                Q = 200.0  # Quality factor
+                # Design notch filter
+                b1, a1 = signal.iirnotch(f0, Q, fs)
+                x[f_ind[0],:,f_ind[2]] = signal.filtfilt(b1,a1,x[f_ind[0],:,f_ind[2]],axis=1)
 
             ind1 = []
             ind2 = []
@@ -110,7 +159,8 @@ class Dataset(object):
             self.F += fi
             self.F2 += fi2
             self.F3 += fi3
-            print('%d/%d: '%(i,N)+file)
+            if show_process:
+                print('%d/%d: '%(i,N)+file)
 
         
         self.X = np.array(self.X)

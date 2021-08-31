@@ -1,0 +1,20 @@
+pca:
+{'select__n_components': 100, 'model__gamma': 'scale', 'model__C': 2}
+
+0.5150800107160195
+
+vt:
+{'model__gamma': 'auto', 'model__C': 2}
+
+0.513196826004028
+
+sfm:
+{'model__gamma': 'scale', 'model__C': 4}
+
+0.564969600119484
+
+rfe:
+{'select__n_features_to_select': 160, 'model__gamma': 'scale', 'model__C': 2}
+
+0.5239070426890462
+

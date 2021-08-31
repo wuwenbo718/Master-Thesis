@@ -87,6 +87,21 @@ def rectify_emg(emg, low_pass=10, sfreq=1000, high_band=20, low_band=450):
     emg_envelope = signal.filtfilt(b2, a2, emg_rectified)
     return emg_envelope
 
+def mean_smooth(data,neighbor=5):
+    """
+    Smooth the signal with mean.
+    """
+    if data.shape[0] == 0:
+        print('empty dataset.')
+        return np.array([])
+    [m,n,l]=data.shape
+    temp = np.zeros((m,n+neighbor*2,l))
+    temp[:,neighbor:-neighbor,:]=data
+    results = np.zeros((m,n,l))
+    for i in range(neighbor*2+1):
+        results += temp[:,i:n+i,:]
+    return results/(neighbor*2+1)
+
 def rectify_emg_moving_average(emg, neighbor=10):
     """
     Compute the envelope of EMG signal with averaging methode.
@@ -106,7 +121,7 @@ def rectify_emg_moving_average(emg, neighbor=10):
     emg_envelope = mean_smooth(emg_rectified,neighbor)
     return emg_envelope
 
-def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler=False,same_label=False):
+def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler=False,same_label=False,drop_with_zscore=None,remove_freqs=False):
     """
     Segment the signal. Only keep the segments with continuous time.
     
@@ -124,6 +139,14 @@ def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler
     if same_label:
         ind = (data.Label1 == data.Label2)
         data = data.loc[ind,:].reset_index(drop=True)
+#         print(len(data))
+        
+    if drop_with_zscore:
+        
+        ind = abs(zscore(data.iloc[:,3:],axis=0)) > drop_with_zscore
+        ind = data.index[np.any(ind,axis=1)]
+        data = data.drop(ind).reset_index(drop=True)
+#         print(len(data))
         
     l = len(data)
     end = (l-width)//stride+1
@@ -137,6 +160,19 @@ def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler
                 time = np.array(data.iloc[i*stride:i*stride+width,0])
                 if (np.round(time[1:]-time[:-1],3)>0.001).any():
                     continue
+                    
+                if remove_freqs:
+                    freqs, power=signal.periodogram(temp, 1e3,axis=0)
+#                     ind_l = freqs>20
+                    ind_l = (freqs<250) & (freqs>20)
+                    max_l = np.max(power[ind_l],axis=0)
+    #                 max_h = np.max(power[~ind_l],axis=0)
+                    # The amplitude of frequency components that is lower than 20 Hz must be less than 10 times of the other components and the amplitude of max frequency must over 0.5
+#                     if  np.sum(max_l<0.6)>=temp.shape[1]/2:
+                    if  np.any(max_l<0.5):
+#                         print(np.round(time[0],3),':',np.round(time[-1],3))
+                        continue
+                    
                 Y += [data.Label2[i*stride]]
                 x_sc = sc.fit_transform(temp)
                 X += [x_sc]
@@ -149,6 +185,16 @@ def generate_window_slide_data_time_continue(data,width = 256,stride = 64,scaler
                 time = np.array(data.iloc[i*stride:i*stride+width,0])
                 if (np.round(time[1:]-time[:-1],3)>0.001).any():
                     continue
+                
+                if remove_freqs:
+                    freqs, power=signal.periodogram(temp, 1e3,axis=0)
+                    ind_l = freqs<250
+                    max_l = np.max(power[ind_l],axis=0)
+    #                 max_h = np.max(power[~ind_l],axis=0)
+                    # The amplitude of frequency components that is lower than 20 Hz must be less than 10 times of the other components and the amplitude of max frequency must over 0.5
+                    if  np.any(max_l<0.5):
+                        continue
+                    
                 Y += [data.Label2[i*stride]]
                 X += [temp]
             else:

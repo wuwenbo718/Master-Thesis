@@ -22,11 +22,22 @@ class Config(object):
     # Whether to keep data with same label1 and label2
     SAME_LABEL = True
     
+    # Whether to remove the outliers with frequency
+    REMOVE_FREQS = True
+    
+    # Whether to remove the outliers with zscore
+    DROP_WITH_ZSCORE = None
+    
     # Lambda for detrend. None for not using detrend.
     DETREND_LAMBDA = 50
     
     # Cut-off frequency of lowpass filter. None for no using highpass filter
+    FN_HP = None
+    
+    # Cut-off frequency of lowpass filter. None for no using highpass filter
     FN_LP = 300
+    
+    FN_IR = False
     
     # Channel to use
     CHANNELS = ['LEFT_TA','LEFT_TS','LEFT_BF','LEFT_RF',

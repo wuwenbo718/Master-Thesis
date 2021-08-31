@@ -1,0 +1,25 @@
+pca:
+{'select__n_components': 180, 'model__gamma': 'auto', 'model__class_weight': {0: 1, 1: 9}, 'model__C': 2}
+
+0.8955542652293523
+
+vt:
+{'select__threshold': 0.02, 'model__gamma': 'auto', 'model__class_weight': {0: 1, 1: 8}, 'model__C': 5}
+
+0.9366980732032962
+
+sfm:
+{'model__gamma': 'auto', 'model__class_weight': {0: 1, 1: 3}, 'model__C': 1}
+
+0.9286709857322775
+
+rfe:
+{'select__n_features_to_select': 80, 'model__gamma': 'auto', 'model__class_weight': {0: 1, 1: 9}, 'model__C': 18}
+
+0.9432711281417534
+
+pca:
+{'select__n_components': 160, 'model__gamma': 'auto', 'model__class_weight': {0: 1, 1: 8}, 'model__C': 1}
+
+0.8705320595644856
+

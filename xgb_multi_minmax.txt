@@ -1,0 +1,25 @@
+pca:
+{'select__n_components': 120, 'model__subsample': 0.7, 'model__scale_pos_weight': 7, 'model__reg_lambda': 28, 'model__max_depth': 2, 'model__learning_rate': 0.4, 'model__colsample_bytree': 0.7999999999999999}
+
+0.6651409749993532
+
+pca:
+{'select__n_components': 120, 'model__subsample': 0.7, 'model__reg_lambda': 12, 'model__max_depth': 2, 'model__learning_rate': 0.30000000000000004, 'model__colsample_bytree': 0.7}
+
+0.6458793162686433
+
+vt:
+{'select__threshold': 0.01, 'model__subsample': 0.7999999999999999, 'model__reg_lambda': 23, 'model__max_depth': 2, 'model__learning_rate': 0.2, 'model__colsample_bytree': 0.6}
+
+0.6691799844140259
+
+sfm:
+{'model__subsample': 0.7999999999999999, 'model__reg_lambda': 22, 'model__max_depth': 2, 'model__learning_rate': 0.30000000000000004, 'model__colsample_bytree': 0.6}
+
+0.6514448116271185
+
+rfe:
+{'select__n_features_to_select': 80, 'model__subsample': 0.7999999999999999, 'model__reg_lambda': 21, 'model__max_depth': 2, 'model__learning_rate': 0.4, 'model__colsample_bytree': 0.6}
+
+0.6846562348661962
+

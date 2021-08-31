@@ -1,0 +1,8 @@
+pca:{'select__n_components': 180, 'model__subsample': 0.7, 'model__scale_pos_weight': 8, 'model__reg_lambda': 19, 'model__max_depth': 3, 'model__learning_rate': 0.2, 'model__colsample_bytree': 0.6}
+0.9203636846030213
+vt:{'select__threshold': 0.04, 'model__subsample': 0.5, 'model__scale_pos_weight': 9, 'model__reg_lambda': 15, 'model__max_depth': 2, 'model__learning_rate': 0.2, 'model__colsample_bytree': 0.7999999999999999}
+0.8848705577304119
+sfm:{'model__subsample': 0.5, 'model__scale_pos_weight': 7, 'model__reg_lambda': 18, 'model__max_depth': 3, 'model__learning_rate': 0.2, 'model__colsample_bytree': 0.6}
+0.8835253707694023
+rfe:{'select__n_features_to_select': 180, 'model__subsample': 0.6, 'model__scale_pos_weight': 6, 'model__reg_lambda': 22, 'model__max_depth': 3, 'model__learning_rate': 0.4, 'model__colsample_bytree': 0.7999999999999999}
+0.8950624683218829

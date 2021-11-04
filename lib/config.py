@@ -69,6 +69,9 @@ class Config(object):
     # Number of classification classes
     NUM_CLASSES = 2 # override in subclasses
     
+    # Whether to save the model
+    SAVE = False
+    
     def to_dict(self):
         return {a: getattr(self, a)
                 for a in sorted(dir(self))

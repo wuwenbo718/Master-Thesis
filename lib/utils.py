@@ -672,7 +672,7 @@ def data_split_oh(data,labels,
     x_test = data[2][inds[2]]
     y_test = oh.transform(label_n[2][:,np.newaxis]).toarray()
     
-    return x_train,y_train,x_valid,y_valid,x_test,y_test
+    return x_train,y_train,x_valid,y_valid,x_test,y_test,oh
 
 def data_split(data,labels,
                class_id=None,

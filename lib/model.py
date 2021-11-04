@@ -173,10 +173,17 @@ class NNModel(metaclass=abc.ABCMeta):
             os.makedirs(self.log_dir)
         
         # Callbacks
-        callbacks = [keras.callbacks.TensorBoard(log_dir=self.log_dir,
-                                histogram_freq=0, write_graph=True, write_images=False),
-                 keras.callbacks.ModelCheckpoint(self.checkpoint_path,verbose=0, 
-                                    save_weights_only=True,save_freq=10)]
+        callbacks = []
+        
+        if self.config.SAVE:
+            callbacks += [keras.callbacks.TensorBoard(log_dir=self.log_dir,histogram_freq=0, write_graph=True, write_images=False),
+                     keras.callbacks.ModelCheckpoint(self.checkpoint_path,verbose=0, 
+                     save_weights_only=True,save_freq=10)]
+            
+#         callbacks = [keras.callbacks.TensorBoard(log_dir=self.log_dir,
+#                                 histogram_freq=0, write_graph=True, write_images=False),
+#                  keras.callbacks.ModelCheckpoint(self.checkpoint_path,verbose=0, 
+#                                     save_weights_only=True,save_freq=10)]
         
         # Add other callbacks to the list
         if other_callbacks:
@@ -196,7 +203,8 @@ class NNModel(metaclass=abc.ABCMeta):
                       shuffle=True
         )
         self.epoch = max(self.epoch, epochs)
-        self.save()
+        if self.config.SAVE:
+            self.save()
         
     def predict(self, data):
 
